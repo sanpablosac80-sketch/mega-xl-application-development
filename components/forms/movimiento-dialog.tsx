@@ -117,6 +117,9 @@ function MovimientoForm({
       <FormField id="nota" label="Nota (opcional)">
         <Input id="nota" name="nota" maxLength={140} placeholder="Ej. Factura F001-2345" />
       </FormField>
+      <FormField id="access_key" label="Clave de acceso" hint="Obligatoria para modificar el inventario.">
+        <Input id="access_key" name="access_key" type="password" autoComplete="off" required placeholder="Clave administrativa" />
+      </FormField>
       <DialogFooter>
         <DialogClose render={<Button variant="outline" type="button" />}>Cancelar</DialogClose>
         <Button type="submit" disabled={pending}>
