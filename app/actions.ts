@@ -242,3 +242,37 @@ export async function guardarConfiguracion(_: ActionState, fd: FormData): Promis
   revalidateAll()
   return success('Configuración guardada.')
 }
+
+
+export async function crearComprobante(_: ActionState, fd: FormData): Promise<ActionState> {
+  const venta_id = text(fd, 'venta_id', 64)
+  const tipo = text(fd, 'tipo', 20)
+  if (!venta_id || !['factura', 'boleta'].includes(tipo)) return fail('Selecciona una venta y tipo de comprobante.')
+  try {
+    const { getSupabase } = await import('@/lib/data/supabase')
+    const { error } = await getSupabase().rpc('crear_comprobante_desde_venta', { p_venta_id: venta_id, p_tipo: tipo })
+    if (error) throw new Error(error.message)
+  } catch (e) { return fail(errorMessage(e)) }
+  revalidateAll()
+  return success(tipo === 'factura' ? 'Factura registrada como pendiente de SUNAT.' : 'Boleta registrada como pendiente de SUNAT.')
+}
+
+export async function crearGuiaRemision(_: ActionState, fd: FormData): Promise<ActionState> {
+  const venta_id = text(fd, 'venta_id', 64)
+  const tipo = text(fd, 'tipo', 20)
+  if (!venta_id) return fail('Selecciona una venta.')
+  try {
+    const { getSupabase } = await import('@/lib/data/supabase')
+    const { error } = await getSupabase().rpc('crear_guia_desde_venta', {
+      p_venta_id: venta_id, p_tipo: tipo, p_motivo: text(fd, 'motivo', 80) || 'Venta',
+      p_partida: text(fd, 'partida', 200), p_llegada: text(fd, 'llegada', 200),
+      p_modalidad: text(fd, 'modalidad', 30) || 'privado', p_transportista_ruc: text(fd, 'transportista_ruc', 20),
+      p_transportista_nombre: text(fd, 'transportista_nombre', 120), p_placa: text(fd, 'placa', 20),
+      p_conductor_documento: text(fd, 'conductor_documento', 20), p_conductor_licencia: text(fd, 'conductor_licencia', 30),
+      p_fecha: text(fd, 'fecha', 10) || null,
+    })
+    if (error) throw new Error(error.message)
+  } catch (e) { return fail(errorMessage(e)) }
+  revalidateAll()
+  return success('Guía registrada como pendiente de SUNAT.')
+}

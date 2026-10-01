@@ -1,5 +1,7 @@
 import {
   BarChart3,
+  FileText,
+  Truck,
   Boxes,
   LayoutDashboard,
   Package,
@@ -13,6 +15,8 @@ export const NAV_ITEMS = [
   { href: '/productos', label: 'Productos', icon: Package },
   { href: '/inventario', label: 'Inventario', icon: Boxes },
   { href: '/ventas', label: 'Ventas', icon: ShoppingCart },
+  { href: '/facturacion', label: 'Facturación', icon: FileText },
+  { href: '/guias-remision', label: 'Guías de remisión', icon: Truck },
   { href: '/clientes', label: 'Clientes', icon: Users },
   { href: '/reportes', label: 'Reportes', icon: BarChart3 },
   { href: '/configuracion', label: 'Configuración', icon: Settings },
