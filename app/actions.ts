@@ -59,11 +59,18 @@ export async function crearComprobante(_:ActionState,fd:FormData):Promise<Action
   const {data:comprobanteId,error}=await sb.rpc('crear_comprobante_desde_venta',{p_venta_id:venta_id,p_tipo:tipo})
   if(error)throw new Error(error.message)
   if(!comprobanteId)throw new Error('No se recibió el identificador del comprobante.')
-  const {data:ubl,error:ublError}=await sb.functions.invoke('sunat-ubl',{body:{comprobante_id:comprobanteId}})
-  if(ublError)throw new Error(`Comprobante creado, pero no se pudo generar UBL: ${ublError.message}`)
-  if(!ubl?.ok)throw new Error('Comprobante creado, pero la generación UBL no terminó correctamente.')
- }catch(e){return fail(errorMessage(e))}
- revalidateAll()
- return success(tipo==='factura'?'Factura creada y XML UBL 2.1 generado. Envío SUNAT aún bloqueado.':'Boleta creada y XML UBL 2.1 generado. Envío SUNAT aún bloqueado.')
+  const invoke=async(name:string,body:Record<string,unknown>)=>{
+   const {data,error}=await sb.functions.invoke(name,{body})
+   if(error)throw new Error(`${name}: ${error.message}`)
+   if(!data?.ok)throw new Error(`${name}: ${data?.error||'la etapa no terminó correctamente'}`)
+   return data
+  }
+  await invoke('sunat-ubl',{comprobante_id:comprobanteId})
+  await invoke('sunat-sign',{comprobante_id:comprobanteId})
+  await invoke('sunat-zip',{comprobante_id:comprobanteId})
+  const beta=await invoke('sunat-beta-send',{comprobante_id:comprobanteId,confirm_beta:true})
+  revalidateAll()
+  return success(`${tipo==='factura'?'Factura':'Boleta'} creada. UBL firmado, ZIP generado y prueba SUNAT BETA ejecutada${beta.cdr_received?' con CDR recibido':''}. Producción permanece bloqueada.`)
+ }catch(e){revalidateAll();return fail(errorMessage(e))}
 }
 export async function crearGuiaRemision(_:ActionState,fd:FormData):Promise<ActionState>{const venta_id=text(fd,'venta_id',64),tipo=text(fd,'tipo',20);if(!venta_id)return fail('Selecciona una venta.');try{const {getSupabase}=await import('@/lib/data/supabase');const {error}=await getSupabase().rpc('crear_guia_desde_venta',{p_venta_id:venta_id,p_tipo:tipo,p_motivo:text(fd,'motivo',80)||'Venta',p_partida:text(fd,'partida',200),p_llegada:text(fd,'llegada',200),p_modalidad:text(fd,'modalidad',30)||'privado',p_transportista_ruc:text(fd,'transportista_ruc',20),p_transportista_nombre:text(fd,'transportista_nombre',120),p_placa:text(fd,'placa',20),p_conductor_documento:text(fd,'conductor_documento',20),p_conductor_licencia:text(fd,'conductor_licencia',30),p_fecha:text(fd,'fecha',10)||null});if(error)throw new Error(error.message)}catch(e){return fail(errorMessage(e))}revalidateAll();return success('Guía registrada como pendiente de SUNAT.')}
