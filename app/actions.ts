@@ -84,7 +84,7 @@ export async function crearProducto(_: ActionState, fd: FormData): Promise<Actio
   const { input, errors } = parseProducto(fd, true)
   if (Object.keys(errors).length) return fail('Revisa los campos marcados.', errors)
   try {
-    await (await getRepository()).createProducto(input)
+    await (await getRepository()).createProducto(input, text(fd, 'access_key', 80))
   } catch (e) {
     return fail(errorMessage(e))
   }
@@ -98,7 +98,7 @@ export async function actualizarProducto(_: ActionState, fd: FormData): Promise<
   const { input, errors } = parseProducto(fd, false)
   if (Object.keys(errors).length) return fail('Revisa los campos marcados.', errors)
   try {
-    await (await getRepository()).updateProducto(id, input)
+    await (await getRepository()).updateProducto(id, input, text(fd, 'access_key', 80))
   } catch (e) {
     return fail(errorMessage(e))
   }
@@ -138,7 +138,7 @@ export async function registrarMovimiento(_: ActionState, fd: FormData): Promise
       tipo,
       cantidad,
       motivo: nota ? `${motivoBase} - ${nota}` : motivoBase,
-    })
+    }, text(fd, 'access_key', 80))
   } catch (e) {
     return fail(errorMessage(e))
   }
