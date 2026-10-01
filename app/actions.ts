@@ -149,6 +149,9 @@ export async function registrarMovimiento(_: ActionState, fd: FormData): Promise
 export async function registrarVenta(_: ActionState, fd: FormData): Promise<ActionState> {
   const cliente_id = text(fd, 'cliente_id', 64) || null
   const metodo_pago = text(fd, 'metodo_pago', 30)
+  const descuento_porcentaje = money(fd, 'descuento_porcentaje')
+  if (!Number.isFinite(descuento_porcentaje) || descuento_porcentaje < 0 || descuento_porcentaje > 100)
+    return fail('El descuento debe estar entre 0% y 100%.')
   if (!(METODOS_PAGO as readonly string[]).includes(metodo_pago))
     return fail('Selecciona un método de pago.')
 
@@ -174,6 +177,7 @@ export async function registrarVenta(_: ActionState, fd: FormData): Promise<Acti
     await (await getRepository()).registrarVenta({
       cliente_id,
       metodo_pago,
+      descuento_porcentaje,
       items: [...totals].map(([producto_id, cantidad]) => ({ producto_id, cantidad })),
     })
   } catch (e) {
