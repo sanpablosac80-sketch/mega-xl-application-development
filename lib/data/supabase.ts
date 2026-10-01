@@ -4,19 +4,23 @@ import type { Configuracion, Movimiento, Producto, Repository, Venta } from '@/l
 
 let client: SupabaseClient | null = null
 
-export function hasSupabaseEnv() {
-  return Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+function getSupabaseKey() {
+  return (
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   )
+}
+
+export function hasSupabaseEnv() {
+  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && getSupabaseKey())
 }
 
 export function getSupabase() {
   if (!client) {
-    client = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-      { auth: { persistSession: false } },
-    )
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const key = getSupabaseKey()
+    if (!url || !key) throw new Error('Faltan las variables de entorno de Supabase')
+    client = createClient(url, key, { auth: { persistSession: false } })
   }
   return client
 }
