@@ -73,4 +73,24 @@ export async function crearComprobante(_:ActionState,fd:FormData):Promise<Action
   return success(`${tipo==='factura'?'Factura':'Boleta'} creada. UBL firmado, ZIP generado y prueba SUNAT BETA ejecutada${beta.cdr_received?' con CDR recibido':''}. Producción permanece bloqueada.`)
  }catch(e){revalidateAll();return fail(errorMessage(e))}
 }
+export async function procesarComprobanteBeta(_:ActionState,fd:FormData):Promise<ActionState>{
+ const comprobante_id=text(fd,'comprobante_id',64)
+ if(!comprobante_id)return fail('Comprobante no válido.')
+ try{
+  const {getSupabase}=await import('@/lib/data/supabase')
+  const sb=getSupabase()
+  const invoke=async(name:string,body:Record<string,unknown>)=>{
+   const {data,error}=await sb.functions.invoke(name,{body})
+   if(error)throw new Error(`${name}: ${error.message}`)
+   if(!data?.ok)throw new Error(`${name}: ${data?.error||data?.fault||'la etapa no terminó correctamente'}`)
+   return data
+  }
+  await invoke('sunat-ubl',{comprobante_id})
+  await invoke('sunat-sign',{comprobante_id})
+  await invoke('sunat-zip',{comprobante_id})
+  const beta=await invoke('sunat-beta-send',{comprobante_id,confirm_beta:true})
+  revalidateAll()
+  return success(`Prueba SUNAT BETA completada${beta.cdr_received?' con CDR recibido':''}. Producción permanece bloqueada.`)
+ }catch(e){revalidateAll();return fail(errorMessage(e))}
+}
 export async function crearGuiaRemision(_:ActionState,fd:FormData):Promise<ActionState>{const venta_id=text(fd,'venta_id',64),tipo=text(fd,'tipo',20);if(!venta_id)return fail('Selecciona una venta.');try{const {getSupabase}=await import('@/lib/data/supabase');const {error}=await getSupabase().rpc('crear_guia_desde_venta',{p_venta_id:venta_id,p_tipo:tipo,p_motivo:text(fd,'motivo',80)||'Venta',p_partida:text(fd,'partida',200),p_llegada:text(fd,'llegada',200),p_modalidad:text(fd,'modalidad',30)||'privado',p_transportista_ruc:text(fd,'transportista_ruc',20),p_transportista_nombre:text(fd,'transportista_nombre',120),p_placa:text(fd,'placa',20),p_conductor_documento:text(fd,'conductor_documento',20),p_conductor_licencia:text(fd,'conductor_licencia',30),p_fecha:text(fd,'fecha',10)||null});if(error)throw new Error(error.message)}catch(e){return fail(errorMessage(e))}revalidateAll();return success('Guía registrada como pendiente de SUNAT.')}
