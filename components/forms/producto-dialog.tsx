@@ -97,6 +97,9 @@ function ProductoForm({ producto, onDone }: { producto?: Producto; onDone: () =>
           </FormField>
         )}
       </div>
+      <FormField id="access_key" label="Clave de acceso" hint="Obligatoria para crear o modificar productos y precios.">
+        <Input id="access_key" name="access_key" type="password" autoComplete="off" required placeholder="Clave administrativa" />
+      </FormField>
       <DialogFooter>
         <DialogClose render={<Button variant="outline" type="button" />}>Cancelar</DialogClose>
         <Button type="submit" disabled={pending}>
