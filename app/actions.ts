@@ -19,260 +19,51 @@ export interface ActionState {
 }
 
 const fail = (message: string, errors?: Record<string, string>): ActionState => ({
-  ok: false,
-  message,
-  errors,
-  ts: Date.now(),
+  ok: false, message, errors, ts: Date.now(),
 })
 const success = (message: string): ActionState => ({ ok: true, message, ts: Date.now() })
+const text = (fd: FormData, key: string, max = 200) => String(fd.get(key) ?? '').trim().slice(0, max)
+function int(fd: FormData, key: string) { const raw=String(fd.get(key)??'').trim(); if(raw==='') return NaN; const n=Number(raw); return Number.isInteger(n)?n:NaN }
+function money(fd: FormData, key: string) { const raw=String(fd.get(key)??'').trim().replace(',','.'); if(raw==='') return NaN; const n=Number(raw); return Number.isFinite(n)?Math.round(n*100)/100:NaN }
+const errorMessage=(e:unknown)=>e instanceof Error?e.message:'Ocurrió un error inesperado. Inténtalo de nuevo.'
+function revalidateAll(){revalidatePath('/','layout')}
 
-const text = (fd: FormData, key: string, max = 200) =>
-  String(fd.get(key) ?? '').trim().slice(0, max)
-
-function int(fd: FormData, key: string) {
-  const raw = String(fd.get(key) ?? '').trim()
-  if (raw === '') return NaN
-  const n = Number(raw)
-  return Number.isInteger(n) ? n : NaN
+function parseProducto(fd:FormData,isNew:boolean){
+ const errors:Record<string,string>={}
+ const input:ProductoInput={sku:text(fd,'sku',40).toUpperCase(),nombre:text(fd,'nombre',120),presentacion:text(fd,'presentacion',60),categoria:text(fd,'categoria',60)||'General',unidades:int(fd,'unidades'),precio_venta:money(fd,'precio_venta'),precio_costo:money(fd,'precio_costo'),stock_minimo:int(fd,'stock_minimo')}
+ if(!/^[A-Z0-9-_.]{2,40}$/.test(input.sku)) errors.sku='Usa 2-40 caracteres: letras, números o guiones.'
+ if(input.nombre.length<2) errors.nombre='Ingresa el nombre del producto.'
+ if(!input.presentacion) errors.presentacion='Ingresa la presentación.'
+ if(!(input.unidades>=1&&input.unidades<=MAX_CANTIDAD)) errors.unidades='Debe ser un número entero mayor a 0.'
+ if(!(input.precio_venta>=0)) errors.precio_venta='Precio inválido.'
+ if(!(input.precio_costo>=0)) errors.precio_costo='Precio inválido.'
+ if(!(input.stock_minimo>=0&&input.stock_minimo<=MAX_CANTIDAD)) errors.stock_minimo='Debe ser un entero mayor o igual a 0.'
+ if(isNew){const stock=int(fd,'stock_actual');if(!(stock>=0&&stock<=MAX_CANTIDAD)) errors.stock_actual='Debe ser un entero mayor o igual a 0.';input.stock_actual=stock}
+ return {input,errors}
 }
+export async function crearProducto(_:ActionState,fd:FormData):Promise<ActionState>{const {input,errors}=parseProducto(fd,true);if(Object.keys(errors).length)return fail('Revisa los campos marcados.',errors);try{await(await getRepository()).createProducto(input,text(fd,'access_key',80))}catch(e){return fail(errorMessage(e))}revalidateAll();return success(`Producto ${input.nombre} creado.`)}
+export async function actualizarProducto(_:ActionState,fd:FormData):Promise<ActionState>{const id=text(fd,'id',64);if(!id)return fail('Producto no válido.');const {input,errors}=parseProducto(fd,false);if(Object.keys(errors).length)return fail('Revisa los campos marcados.',errors);try{await(await getRepository()).updateProducto(id,input,text(fd,'access_key',80))}catch(e){return fail(errorMessage(e))}revalidateAll();return success(`Producto ${input.nombre} actualizado.`)}
+export async function eliminarProducto(id:string):Promise<ActionState>{try{await(await getRepository()).deleteProducto(id)}catch(e){return fail(errorMessage(e))}revalidateAll();return success('Producto eliminado.')}
+export async function registrarMovimiento(_:ActionState,fd:FormData):Promise<ActionState>{const tipo=text(fd,'tipo') as TipoMovimiento,producto_id=text(fd,'producto_id',64),cantidad=int(fd,'cantidad'),motivoBase=text(fd,'motivo',60),nota=text(fd,'nota',140),errors:Record<string,string>={};if(tipo!=='entrada'&&tipo!=='salida')return fail('Tipo de movimiento inválido.');const motivos:readonly string[]=tipo==='entrada'?MOTIVOS_ENTRADA:MOTIVOS_SALIDA;if(!producto_id)errors.producto_id='Selecciona un producto.';if(!(cantidad>=1&&cantidad<=MAX_CANTIDAD))errors.cantidad=`Ingresa un entero entre 1 y ${MAX_CANTIDAD}.`;if(!motivos.includes(motivoBase))errors.motivo='Selecciona un motivo.';if(Object.keys(errors).length)return fail('Revisa los campos marcados.',errors);try{await(await getRepository()).registrarMovimiento({producto_id,tipo,cantidad,motivo:nota?`${motivoBase} - ${nota}`:motivoBase},text(fd,'access_key',80))}catch(e){return fail(errorMessage(e))}revalidateAll();return success(tipo==='entrada'?'Entrada registrada.':'Salida registrada.')}
+export async function registrarVenta(_:ActionState,fd:FormData):Promise<ActionState>{const cliente_id=text(fd,'cliente_id',64)||null,metodo_pago=text(fd,'metodo_pago',30),descuento_porcentaje=money(fd,'descuento_porcentaje');if(!Number.isFinite(descuento_porcentaje)||descuento_porcentaje<0||descuento_porcentaje>100)return fail('El descuento debe estar entre 0% y 100%.');if(!(METODOS_PAGO as readonly string[]).includes(metodo_pago))return fail('Selecciona un método de pago.');let items:{producto_id:string;cantidad:number}[];try{const parsed=JSON.parse(String(fd.get('items')??'[]'));if(!Array.isArray(parsed)||parsed.length===0||parsed.length>100)throw new Error();items=parsed.map(i=>({producto_id:String(i.producto_id),cantidad:Number(i.cantidad)}))}catch{return fail('Agrega al menos un producto a la venta.')}const totals=new Map<string,number>();for(const i of items){if(!i.producto_id||!Number.isInteger(i.cantidad)||i.cantidad<1)return fail('Las cantidades deben ser enteros mayores a 0.');totals.set(i.producto_id,(totals.get(i.producto_id)??0)+i.cantidad)}if([...totals.values()].some(c=>c>MAX_CANTIDAD))return fail(`La cantidad máxima por producto es ${MAX_CANTIDAD}.`);try{await(await getRepository()).registrarVenta({cliente_id,metodo_pago,descuento_porcentaje,items:[...totals].map(([producto_id,cantidad])=>({producto_id,cantidad}))})}catch(e){return fail(errorMessage(e))}revalidateAll();return success('Venta registrada correctamente.')}
+export async function crearCliente(_:ActionState,fd:FormData):Promise<ActionState>{const input={nombre:text(fd,'nombre',120),documento:text(fd,'documento',20),telefono:text(fd,'telefono',30),email:text(fd,'email',120),direccion:text(fd,'direccion',200)},errors:Record<string,string>={};if(input.nombre.length<2)errors.nombre='Ingresa el nombre o razón social.';if(input.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email))errors.email='Correo electrónico inválido.';if(Object.keys(errors).length)return fail('Revisa los campos marcados.',errors);try{await(await getRepository()).createCliente(input)}catch(e){return fail(errorMessage(e))}revalidateAll();return success(`Cliente ${input.nombre} registrado.`)}
+export async function eliminarCliente(id:string):Promise<ActionState>{try{await(await getRepository()).deleteCliente(id)}catch(e){return fail(errorMessage(e))}revalidateAll();return success('Cliente eliminado.')}
+export async function guardarConfiguracion(_:ActionState,fd:FormData):Promise<ActionState>{const input={nombre_empresa:text(fd,'nombre_empresa',120),ruc:text(fd,'ruc',20),direccion:text(fd,'direccion',200),telefono:text(fd,'telefono',30),email:text(fd,'email',120),simbolo_moneda:text(fd,'simbolo_moneda',5)},errors:Record<string,string>={};if(input.nombre_empresa.length<2)errors.nombre_empresa='Ingresa el nombre de la empresa.';if(!input.simbolo_moneda)errors.simbolo_moneda='Ingresa el símbolo de moneda.';if(input.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email))errors.email='Correo electrónico inválido.';if(Object.keys(errors).length)return fail('Revisa los campos marcados.',errors);try{await(await getRepository()).updateConfiguracion(input)}catch(e){return fail(errorMessage(e))}revalidateAll();return success('Configuración guardada.')}
 
-function money(fd: FormData, key: string) {
-  const raw = String(fd.get(key) ?? '').trim().replace(',', '.')
-  if (raw === '') return NaN
-  const n = Number(raw)
-  return Number.isFinite(n) ? Math.round(n * 100) / 100 : NaN
+export async function crearComprobante(_:ActionState,fd:FormData):Promise<ActionState>{
+ const venta_id=text(fd,'venta_id',64),tipo=text(fd,'tipo',20)
+ if(!venta_id||!['factura','boleta'].includes(tipo))return fail('Selecciona una venta y tipo de comprobante.')
+ try{
+  const {getSupabase}=await import('@/lib/data/supabase')
+  const sb=getSupabase()
+  const {data:comprobanteId,error}=await sb.rpc('crear_comprobante_desde_venta',{p_venta_id:venta_id,p_tipo:tipo})
+  if(error)throw new Error(error.message)
+  if(!comprobanteId)throw new Error('No se recibió el identificador del comprobante.')
+  const {data:ubl,error:ublError}=await sb.functions.invoke('sunat-ubl',{body:{comprobante_id:comprobanteId}})
+  if(ublError)throw new Error(`Comprobante creado, pero no se pudo generar UBL: ${ublError.message}`)
+  if(!ubl?.ok)throw new Error('Comprobante creado, pero la generación UBL no terminó correctamente.')
+ }catch(e){return fail(errorMessage(e))}
+ revalidateAll()
+ return success(tipo==='factura'?'Factura creada y XML UBL 2.1 generado. Envío SUNAT aún bloqueado.':'Boleta creada y XML UBL 2.1 generado. Envío SUNAT aún bloqueado.')
 }
-
-const errorMessage = (e: unknown) =>
-  e instanceof Error ? e.message : 'Ocurrió un error inesperado. Inténtalo de nuevo.'
-
-function revalidateAll() {
-  revalidatePath('/', 'layout')
-}
-
-function parseProducto(fd: FormData, isNew: boolean) {
-  const errors: Record<string, string> = {}
-  const input: ProductoInput = {
-    sku: text(fd, 'sku', 40).toUpperCase(),
-    nombre: text(fd, 'nombre', 120),
-    presentacion: text(fd, 'presentacion', 60),
-    categoria: text(fd, 'categoria', 60) || 'General',
-    unidades: int(fd, 'unidades'),
-    precio_venta: money(fd, 'precio_venta'),
-    precio_costo: money(fd, 'precio_costo'),
-    stock_minimo: int(fd, 'stock_minimo'),
-  }
-  if (!/^[A-Z0-9-_.]{2,40}$/.test(input.sku))
-    errors.sku = 'Usa 2-40 caracteres: letras, números o guiones.'
-  if (input.nombre.length < 2) errors.nombre = 'Ingresa el nombre del producto.'
-  if (!input.presentacion) errors.presentacion = 'Ingresa la presentación.'
-  if (!(input.unidades >= 1 && input.unidades <= MAX_CANTIDAD))
-    errors.unidades = 'Debe ser un número entero mayor a 0.'
-  if (!(input.precio_venta >= 0)) errors.precio_venta = 'Precio inválido.'
-  if (!(input.precio_costo >= 0)) errors.precio_costo = 'Precio inválido.'
-  if (!(input.stock_minimo >= 0 && input.stock_minimo <= MAX_CANTIDAD))
-    errors.stock_minimo = 'Debe ser un entero mayor o igual a 0.'
-  if (isNew) {
-    const stock = int(fd, 'stock_actual')
-    if (!(stock >= 0 && stock <= MAX_CANTIDAD)) errors.stock_actual = 'Debe ser un entero mayor o igual a 0.'
-    input.stock_actual = stock
-  }
-  return { input, errors }
-}
-
-export async function crearProducto(_: ActionState, fd: FormData): Promise<ActionState> {
-  const { input, errors } = parseProducto(fd, true)
-  if (Object.keys(errors).length) return fail('Revisa los campos marcados.', errors)
-  try {
-    await (await getRepository()).createProducto(input, text(fd, 'access_key', 80))
-  } catch (e) {
-    return fail(errorMessage(e))
-  }
-  revalidateAll()
-  return success(`Producto ${input.nombre} creado.`)
-}
-
-export async function actualizarProducto(_: ActionState, fd: FormData): Promise<ActionState> {
-  const id = text(fd, 'id', 64)
-  if (!id) return fail('Producto no válido.')
-  const { input, errors } = parseProducto(fd, false)
-  if (Object.keys(errors).length) return fail('Revisa los campos marcados.', errors)
-  try {
-    await (await getRepository()).updateProducto(id, input, text(fd, 'access_key', 80))
-  } catch (e) {
-    return fail(errorMessage(e))
-  }
-  revalidateAll()
-  return success(`Producto ${input.nombre} actualizado.`)
-}
-
-export async function eliminarProducto(id: string): Promise<ActionState> {
-  try {
-    await (await getRepository()).deleteProducto(id)
-  } catch (e) {
-    return fail(errorMessage(e))
-  }
-  revalidateAll()
-  return success('Producto eliminado.')
-}
-
-export async function registrarMovimiento(_: ActionState, fd: FormData): Promise<ActionState> {
-  const tipo = text(fd, 'tipo') as TipoMovimiento
-  const producto_id = text(fd, 'producto_id', 64)
-  const cantidad = int(fd, 'cantidad')
-  const motivoBase = text(fd, 'motivo', 60)
-  const nota = text(fd, 'nota', 140)
-  const errors: Record<string, string> = {}
-
-  if (tipo !== 'entrada' && tipo !== 'salida') return fail('Tipo de movimiento inválido.')
-  const motivos: readonly string[] = tipo === 'entrada' ? MOTIVOS_ENTRADA : MOTIVOS_SALIDA
-  if (!producto_id) errors.producto_id = 'Selecciona un producto.'
-  if (!(cantidad >= 1 && cantidad <= MAX_CANTIDAD))
-    errors.cantidad = `Ingresa un entero entre 1 y ${MAX_CANTIDAD}.`
-  if (!motivos.includes(motivoBase)) errors.motivo = 'Selecciona un motivo.'
-  if (Object.keys(errors).length) return fail('Revisa los campos marcados.', errors)
-
-  try {
-    await (await getRepository()).registrarMovimiento({
-      producto_id,
-      tipo,
-      cantidad,
-      motivo: nota ? `${motivoBase} - ${nota}` : motivoBase,
-    }, text(fd, 'access_key', 80))
-  } catch (e) {
-    return fail(errorMessage(e))
-  }
-  revalidateAll()
-  return success(tipo === 'entrada' ? 'Entrada registrada.' : 'Salida registrada.')
-}
-
-export async function registrarVenta(_: ActionState, fd: FormData): Promise<ActionState> {
-  const cliente_id = text(fd, 'cliente_id', 64) || null
-  const metodo_pago = text(fd, 'metodo_pago', 30)
-  const descuento_porcentaje = money(fd, 'descuento_porcentaje')
-  if (!Number.isFinite(descuento_porcentaje) || descuento_porcentaje < 0 || descuento_porcentaje > 100)
-    return fail('El descuento debe estar entre 0% y 100%.')
-  if (!(METODOS_PAGO as readonly string[]).includes(metodo_pago))
-    return fail('Selecciona un método de pago.')
-
-  let items: { producto_id: string; cantidad: number }[]
-  try {
-    const parsed = JSON.parse(String(fd.get('items') ?? '[]'))
-    if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > 100) throw new Error()
-    items = parsed.map((i) => ({ producto_id: String(i.producto_id), cantidad: Number(i.cantidad) }))
-  } catch {
-    return fail('Agrega al menos un producto a la venta.')
-  }
-
-  const totals = new Map<string, number>()
-  for (const i of items) {
-    if (!i.producto_id || !Number.isInteger(i.cantidad) || i.cantidad < 1)
-      return fail('Las cantidades deben ser enteros mayores a 0.')
-    totals.set(i.producto_id, (totals.get(i.producto_id) ?? 0) + i.cantidad)
-  }
-  if ([...totals.values()].some((c) => c > MAX_CANTIDAD))
-    return fail(`La cantidad máxima por producto es ${MAX_CANTIDAD}.`)
-
-  try {
-    await (await getRepository()).registrarVenta({
-      cliente_id,
-      metodo_pago,
-      descuento_porcentaje,
-      items: [...totals].map(([producto_id, cantidad]) => ({ producto_id, cantidad })),
-    })
-  } catch (e) {
-    return fail(errorMessage(e))
-  }
-  revalidateAll()
-  return success('Venta registrada correctamente.')
-}
-
-export async function crearCliente(_: ActionState, fd: FormData): Promise<ActionState> {
-  const input = {
-    nombre: text(fd, 'nombre', 120),
-    documento: text(fd, 'documento', 20),
-    telefono: text(fd, 'telefono', 30),
-    email: text(fd, 'email', 120),
-    direccion: text(fd, 'direccion', 200),
-  }
-  const errors: Record<string, string> = {}
-  if (input.nombre.length < 2) errors.nombre = 'Ingresa el nombre o razón social.'
-  if (input.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email))
-    errors.email = 'Correo electrónico inválido.'
-  if (Object.keys(errors).length) return fail('Revisa los campos marcados.', errors)
-  try {
-    await (await getRepository()).createCliente(input)
-  } catch (e) {
-    return fail(errorMessage(e))
-  }
-  revalidateAll()
-  return success(`Cliente ${input.nombre} registrado.`)
-}
-
-export async function eliminarCliente(id: string): Promise<ActionState> {
-  try {
-    await (await getRepository()).deleteCliente(id)
-  } catch (e) {
-    return fail(errorMessage(e))
-  }
-  revalidateAll()
-  return success('Cliente eliminado.')
-}
-
-export async function guardarConfiguracion(_: ActionState, fd: FormData): Promise<ActionState> {
-  const input = {
-    nombre_empresa: text(fd, 'nombre_empresa', 120),
-    ruc: text(fd, 'ruc', 20),
-    direccion: text(fd, 'direccion', 200),
-    telefono: text(fd, 'telefono', 30),
-    email: text(fd, 'email', 120),
-    simbolo_moneda: text(fd, 'simbolo_moneda', 5),
-  }
-  const errors: Record<string, string> = {}
-  if (input.nombre_empresa.length < 2) errors.nombre_empresa = 'Ingresa el nombre de la empresa.'
-  if (!input.simbolo_moneda) errors.simbolo_moneda = 'Ingresa el símbolo de moneda.'
-  if (input.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email))
-    errors.email = 'Correo electrónico inválido.'
-  if (Object.keys(errors).length) return fail('Revisa los campos marcados.', errors)
-  try {
-    await (await getRepository()).updateConfiguracion(input)
-  } catch (e) {
-    return fail(errorMessage(e))
-  }
-  revalidateAll()
-  return success('Configuración guardada.')
-}
-
-
-export async function crearComprobante(_: ActionState, fd: FormData): Promise<ActionState> {
-  const venta_id = text(fd, 'venta_id', 64)
-  const tipo = text(fd, 'tipo', 20)
-  if (!venta_id || !['factura', 'boleta'].includes(tipo)) return fail('Selecciona una venta y tipo de comprobante.')
-  try {
-    const { getSupabase } = await import('@/lib/data/supabase')
-    const { error } = await getSupabase().rpc('crear_comprobante_desde_venta', { p_venta_id: venta_id, p_tipo: tipo })
-    if (error) throw new Error(error.message)
-  } catch (e) { return fail(errorMessage(e)) }
-  revalidateAll()
-  return success(tipo === 'factura' ? 'Factura registrada como pendiente de SUNAT.' : 'Boleta registrada como pendiente de SUNAT.')
-}
-
-export async function crearGuiaRemision(_: ActionState, fd: FormData): Promise<ActionState> {
-  const venta_id = text(fd, 'venta_id', 64)
-  const tipo = text(fd, 'tipo', 20)
-  if (!venta_id) return fail('Selecciona una venta.')
-  try {
-    const { getSupabase } = await import('@/lib/data/supabase')
-    const { error } = await getSupabase().rpc('crear_guia_desde_venta', {
-      p_venta_id: venta_id, p_tipo: tipo, p_motivo: text(fd, 'motivo', 80) || 'Venta',
-      p_partida: text(fd, 'partida', 200), p_llegada: text(fd, 'llegada', 200),
-      p_modalidad: text(fd, 'modalidad', 30) || 'privado', p_transportista_ruc: text(fd, 'transportista_ruc', 20),
-      p_transportista_nombre: text(fd, 'transportista_nombre', 120), p_placa: text(fd, 'placa', 20),
-      p_conductor_documento: text(fd, 'conductor_documento', 20), p_conductor_licencia: text(fd, 'conductor_licencia', 30),
-      p_fecha: text(fd, 'fecha', 10) || null,
-    })
-    if (error) throw new Error(error.message)
-  } catch (e) { return fail(errorMessage(e)) }
-  revalidateAll()
-  return success('Guía registrada como pendiente de SUNAT.')
-}
+export async function crearGuiaRemision(_:ActionState,fd:FormData):Promise<ActionState>{const venta_id=text(fd,'venta_id',64),tipo=text(fd,'tipo',20);if(!venta_id)return fail('Selecciona una venta.');try{const {getSupabase}=await import('@/lib/data/supabase');const {error}=await getSupabase().rpc('crear_guia_desde_venta',{p_venta_id:venta_id,p_tipo:tipo,p_motivo:text(fd,'motivo',80)||'Venta',p_partida:text(fd,'partida',200),p_llegada:text(fd,'llegada',200),p_modalidad:text(fd,'modalidad',30)||'privado',p_transportista_ruc:text(fd,'transportista_ruc',20),p_transportista_nombre:text(fd,'transportista_nombre',120),p_placa:text(fd,'placa',20),p_conductor_documento:text(fd,'conductor_documento',20),p_conductor_licencia:text(fd,'conductor_licencia',30),p_fecha:text(fd,'fecha',10)||null});if(error)throw new Error(error.message)}catch(e){return fail(errorMessage(e))}revalidateAll();return success('Guía registrada como pendiente de SUNAT.')}
