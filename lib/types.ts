@@ -96,11 +96,11 @@ export type DataMode = 'supabase' | 'demo'
 
 export interface Repository {
   listProductos(): Promise<Producto[]>
-  createProducto(input: ProductoInput): Promise<void>
-  updateProducto(id: string, input: ProductoInput): Promise<void>
+  createProducto(input: ProductoInput, accessKey?: string): Promise<void>
+  updateProducto(id: string, input: ProductoInput, accessKey?: string): Promise<void>
   deleteProducto(id: string): Promise<void>
   listMovimientos(limit?: number): Promise<Movimiento[]>
-  registrarMovimiento(input: MovimientoInput): Promise<void>
+  registrarMovimiento(input: MovimientoInput, accessKey?: string): Promise<void>
   listClientes(): Promise<Cliente[]>
   createCliente(input: ClienteInput): Promise<void>
   deleteCliente(id: string): Promise<void>
