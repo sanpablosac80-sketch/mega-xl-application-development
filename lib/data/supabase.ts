@@ -118,6 +118,11 @@ export const supabaseRepository: Repository = {
         cliente_id: (row.cliente_id as string) ?? null,
         cliente_nombre: (row.clientes as { nombre: string } | null)?.nombre ?? null,
         metodo_pago: row.metodo_pago as string,
+        subtotal: num(row.subtotal || row.total),
+        descuento_porcentaje: num(row.descuento_porcentaje),
+        descuento: num(row.descuento),
+        valor_venta: num(row.valor_venta || num(row.total) / 1.18),
+        igv: num(row.igv || (num(row.total) - num(row.total) / 1.18)),
         total: num(row.total),
         created_at: row.created_at as string,
         items: items.map((i) => ({
@@ -136,6 +141,7 @@ export const supabaseRepository: Repository = {
         p_cliente_id: input.cliente_id,
         p_metodo_pago: input.metodo_pago,
         p_items: input.items,
+        p_descuento_porcentaje: input.descuento_porcentaje,
       }),
     )
   },
