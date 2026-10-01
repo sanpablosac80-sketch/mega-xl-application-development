@@ -57,15 +57,20 @@ interface Linea {
 function VentaForm({ productos, clientes, simbolo, onDone }: Props & { onDone: () => void }) {
   const [state, action, pending] = useActionState(registrarVenta, initialActionState)
   const [lineas, setLineas] = useState<Linea[]>([{ key: 1, producto_id: '', cantidad: 1 }])
+  const [descuento, setDescuento] = useState(0)
   useActionFeedback(state, onDone)
 
   const disponibles = productos.filter((p) => p.stock_actual > 0)
   const byId = new Map(productos.map((p) => [p.id, p]))
   const validas = lineas.filter((l) => l.producto_id && l.cantidad > 0)
-  const total = validas.reduce(
+  const subtotal = validas.reduce(
     (sum, l) => sum + (byId.get(l.producto_id)?.precio_venta ?? 0) * l.cantidad,
     0,
   )
+  const montoDescuento = Math.round(subtotal * descuento) / 100
+  const total = Math.max(0, subtotal - montoDescuento)
+  const valorVenta = total / 1.18
+  const igv = total - valorVenta
 
   const update = (key: number, patch: Partial<Linea>) =>
     setLineas((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)))
@@ -174,11 +179,16 @@ function VentaForm({ productos, clientes, simbolo, onDone }: Props & { onDone: (
         </Button>
       </fieldset>
 
-      <div className="flex items-center justify-between rounded-lg bg-accent px-4 py-3">
-        <span className="text-sm font-medium text-accent-foreground">Total a cobrar</span>
-        <span className="text-xl font-bold tabular-nums text-accent-foreground">
-          {formatMoney(total, simbolo)}
-        </span>
+      <FormField id="descuento_porcentaje" label="Descuento (%)" hint="Se aplica al precio final, que ya incluye IGV.">
+        <Input id="descuento_porcentaje" name="descuento_porcentaje" type="number" min={0} max={100} step="0.01" value={descuento} onChange={(e) => setDescuento(Math.min(100, Math.max(0, Number(e.target.value) || 0)))} />
+      </FormField>
+
+      <div className="rounded-lg bg-accent px-4 py-3 text-sm text-accent-foreground">
+        <div className="flex justify-between"><span>Subtotal (incluye IGV)</span><span>{formatMoney(subtotal, simbolo)}</span></div>
+        <div className="flex justify-between"><span>{`Descuento (${descuento.toFixed(2)}%)`}</span><span>- {formatMoney(montoDescuento, simbolo)}</span></div>
+        <div className="mt-2 flex justify-between border-t pt-2"><span>Valor de venta sin IGV</span><span>{formatMoney(valorVenta, simbolo)}</span></div>
+        <div className="flex justify-between"><span>IGV 18%</span><span>{formatMoney(igv, simbolo)}</span></div>
+        <div className="mt-2 flex justify-between border-t pt-2 text-base font-bold"><span>Total a cobrar</span><span>{formatMoney(total, simbolo)}</span></div>
       </div>
 
       <DialogFooter>

@@ -45,16 +45,21 @@ export const supabaseRepository: Repository = {
     const data = check(await getSupabase().from('productos').select('*').order('sku'))
     return (data ?? []).map(toProducto)
   },
-  async createProducto(input) {
-    const res = await getSupabase()
-      .from('productos')
-      .insert({ ...input, stock_actual: input.stock_actual ?? 0 })
+  async createProducto(input, accessKey) {
+    const res = await getSupabase().rpc('admin_crear_producto', {
+      p_clave: accessKey ?? '',
+      p_producto: { ...input, stock_actual: input.stock_actual ?? 0 },
+    })
     if (res.error?.code === '23505') throw new Error(`Ya existe un producto con el SKU ${input.sku}`)
     check(res)
   },
-  async updateProducto(id, input) {
+  async updateProducto(id, input, accessKey) {
     const { stock_actual: _ignored, ...rest } = input
-    const res = await getSupabase().from('productos').update(rest).eq('id', id)
+    const res = await getSupabase().rpc('admin_actualizar_producto', {
+      p_clave: accessKey ?? '',
+      p_id: id,
+      p_producto: rest,
+    })
     if (res.error?.code === '23505') throw new Error(`Ya existe un producto con el SKU ${input.sku}`)
     check(res)
   },
@@ -78,9 +83,10 @@ export const supabaseRepository: Repository = {
       }
     })
   },
-  async registrarMovimiento(input) {
+  async registrarMovimiento(input, accessKey) {
     check(
-      await getSupabase().rpc('registrar_movimiento', {
+      await getSupabase().rpc('admin_registrar_movimiento', {
+        p_clave: accessKey ?? '',
         p_producto_id: input.producto_id,
         p_tipo: input.tipo,
         p_cantidad: input.cantidad,
@@ -112,6 +118,11 @@ export const supabaseRepository: Repository = {
         cliente_id: (row.cliente_id as string) ?? null,
         cliente_nombre: (row.clientes as { nombre: string } | null)?.nombre ?? null,
         metodo_pago: row.metodo_pago as string,
+        subtotal: num(row.subtotal || row.total),
+        descuento_porcentaje: num(row.descuento_porcentaje),
+        descuento: num(row.descuento),
+        valor_venta: num(row.valor_venta || num(row.total) / 1.18),
+        igv: num(row.igv || (num(row.total) - num(row.total) / 1.18)),
         total: num(row.total),
         created_at: row.created_at as string,
         items: items.map((i) => ({
@@ -130,6 +141,7 @@ export const supabaseRepository: Repository = {
         p_cliente_id: input.cliente_id,
         p_metodo_pago: input.metodo_pago,
         p_items: input.items,
+        p_descuento_porcentaje: input.descuento_porcentaje,
       }),
     )
   },

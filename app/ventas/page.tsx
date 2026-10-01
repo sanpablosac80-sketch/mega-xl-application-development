@@ -51,13 +51,16 @@ export default async function VentasPage() {
               <TableHead>Cliente</TableHead>
               <TableHead>Productos</TableHead>
               <TableHead>Pago</TableHead>
+              <TableHead className="text-right">Descuento</TableHead>
+              <TableHead className="text-right">Valor sin IGV</TableHead>
+              <TableHead className="text-right">IGV 18%</TableHead>
               <TableHead className="text-right">Total</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {ventas.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
                   Aún no hay ventas registradas.
                 </TableCell>
               </TableRow>
@@ -75,6 +78,9 @@ export default async function VentasPage() {
                   <TableCell>
                     <Badge variant="secondary">{v.metodo_pago}</Badge>
                   </TableCell>
+                  <TableCell className="text-right tabular-nums">{v.descuento_porcentaje > 0 ? `${v.descuento_porcentaje}% · ${formatMoney(v.descuento, s)}` : '—'}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatMoney(v.valor_venta, s)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatMoney(v.igv, s)}</TableCell>
                   <TableCell className="text-right font-semibold tabular-nums">{formatMoney(v.total, s)}</TableCell>
                 </TableRow>
               ))
