@@ -1,14 +1,4 @@
-import {
-  BarChart3,
-  FileText,
-  Truck,
-  Boxes,
-  LayoutDashboard,
-  Package,
-  Settings,
-  ShoppingCart,
-  Users,
-} from 'lucide-react'
+import { BarChart3, FileText, Truck, Boxes, LayoutDashboard, Package, Settings, ShoppingCart, Users, Wrench, Calculator } from 'lucide-react'
 
 export const NAV_ITEMS = [
   { href: '/', label: 'Inicio', icon: LayoutDashboard },
@@ -19,6 +9,8 @@ export const NAV_ITEMS = [
   { href: '/guias-remision', label: 'Guías de remisión', icon: Truck },
   { href: '/clientes', label: 'Clientes', icon: Users },
   { href: '/reportes', label: 'Reportes', icon: BarChart3 },
+  { href: '/contabilidad', label: 'Contabilidad', icon: Calculator },
+  { href: '/taller', label: 'Taller', icon: Wrench },
   { href: '/configuracion', label: 'Configuración', icon: Settings },
 ] as const
 
