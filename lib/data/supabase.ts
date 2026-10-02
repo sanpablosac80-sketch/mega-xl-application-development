@@ -100,6 +100,9 @@ export const supabaseRepository: Repository = {
   async createCliente(input) {
     check(await getSupabase().from('clientes').insert(input))
   },
+  async updateCliente(id, input) {
+    check(await getSupabase().from('clientes').update(input).eq('id', id))
+  },
   async deleteCliente(id) {
     check(await getSupabase().from('clientes').delete().eq('id', id))
   },
