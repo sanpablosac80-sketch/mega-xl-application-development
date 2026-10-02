@@ -4,6 +4,7 @@ import { Inter, Geist_Mono } from 'next/font/google'
 import { AppSidebar } from '@/components/app-sidebar'
 import { AppHeader } from '@/components/app-header'
 import { DemoBanner } from '@/components/demo-banner'
+import { MegaAssistant } from '@/components/mega-assistant'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { Toaster } from '@/components/ui/sonner'
 import { getDataMode } from '@/lib/data'
@@ -52,6 +53,7 @@ export default async function RootLayout({
             <main className="flex-1 px-4 py-6 md:px-6 lg:px-8">{children}</main>
           </SidebarInset>
         </SidebarProvider>
+        <MegaAssistant />
         <Toaster richColors position="top-right" />
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
