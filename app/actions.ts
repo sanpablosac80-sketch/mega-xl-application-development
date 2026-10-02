@@ -118,8 +118,8 @@ export async function crearGuiaRemision(_:ActionState,fd:FormData):Promise<Actio
  if(['08','09','19'].includes(motivo_codigo)&&!text(fd,'documento_aduanero',100))return fail('Para este motivo SUNAT requiere el documento aduanero relacionado.')
  try{
   const {getSupabase}=await import('@/lib/data/supabase')
-  const {error}=await getSupabase().rpc('crear_guia_desde_venta',{
-   p_venta_id:venta_id,p_tipo:tipo,p_motivo:motivos[motivo_codigo],p_motivo_codigo:motivo_codigo,p_motivo_detalle:motivo_detalle||null,
+  const {error}=await getSupabase().rpc('crear_gre_remitente',{
+   p_venta_id:venta_id,p_motivo_codigo:motivo_codigo,p_motivo_detalle:motivo_detalle||null,
    p_partida:text(fd,'partida',200),p_partida_ubigeo:partida_ubigeo,p_llegada:text(fd,'llegada',200),p_llegada_ubigeo:llegada_ubigeo,
    p_modalidad:modalidad,p_transportista_ruc:text(fd,'transportista_ruc',20),p_transportista_nombre:text(fd,'transportista_nombre',120),
    p_placa:text(fd,'placa',20),p_conductor_documento:text(fd,'conductor_documento',20),p_conductor_licencia:text(fd,'conductor_licencia',30),
