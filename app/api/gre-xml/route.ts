@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSupabase } from '@/lib/data/supabase'
 
 export async function GET(req:NextRequest){
  const id=req.nextUrl.searchParams.get('id')
  if(!id)return NextResponse.json({error:'GRE requerida'},{status:400})
- const sb=getSupabase()
- const {data,error}=await sb.functions.invoke('sunat-gre-download',{body:{guia_id:id}})
- if(error||!data)return NextResponse.json({error:'No se pudo recuperar el XML GRE'},{status:500})
- const xml=typeof data==='string'?data:new XMLSerializer().serializeToString(data)
- return new NextResponse(xml,{headers:{'Content-Type':'application/xml; charset=utf-8','Content-Disposition':'attachment; filename="GRE-firmada.xml"','Cache-Control':'private, no-store'}})
+ const base=process.env.NEXT_PUBLIC_SUPABASE_URL
+ if(!base)return NextResponse.json({error:'Configuración Supabase no disponible'},{status:500})
+ const response=await fetch(`${base}/functions/v1/sunat-gre-download`,{
+  method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({guia_id:id}),cache:'no-store'
+ })
+ const data=await response.json().catch(()=>null)
+ if(!response.ok||!data?.ok||!data?.url)return NextResponse.json({error:'No se pudo recuperar el XML GRE'},{status:500})
+ return NextResponse.redirect(data.url,307)
 }
