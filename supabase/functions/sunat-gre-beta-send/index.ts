@@ -1,0 +1,31 @@
+import "jsr:@supabase/functions-js@2.5.0/edge-runtime.d.ts";
+import { createClient } from "npm:@supabase/supabase-js@2.57.4";
+import { unzipSync, strFromU8 } from "npm:fflate@0.8.2";
+const j=(x:unknown,s=200)=>Response.json(x,{status:s,headers:{"cache-control":"no-store"}});
+const esc=(s:string)=>s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]!));
+const unesc=(s:string)=>s.replace(/&#(\d+);/g,(_,n)=>String.fromCharCode(Number(n))).replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"').replace(/&amp;/g,"&");
+const tag=(xml:string,name:string)=>{const m=xml.match(new RegExp("<(?:\\w+:)?"+name+"(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:\\w+:)?"+name+">","i"));return m?.[1]?unesc(m[1].replace(/<[^>]+>/g," ").trim()):null;};
+Deno.serve(async(req)=>{
+ if(req.method!=="POST")return j({ok:false,error:"POST required"},405);
+ const b=await req.json().catch(()=>({}));if(!b.guia_id)return j({ok:false,error:"guia_id required"},400);
+ if(b.confirm_beta!==true)return j({ok:false,error:"Explicit GRE BETA confirmation required",environment:"gre-beta",production_enabled:false},409);
+ const url=Deno.env.get("SUPABASE_URL"),key=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");if(!url||!key)return j({ok:false,error:"Backend config missing"},500);
+ const sb=createClient(url,key,{auth:{persistSession:false}});
+ const {data:g,error}=await sb.from("guias_remision").select("id,serie,correlativo,estado_sunat").eq("id",b.guia_id).single();
+ if(error||!g)return j({ok:false,error:"GRE not found"},404);
+ if(!["PENDIENTE","ERROR_BETA","RECHAZADO_BETA"].includes(g.estado_sunat))return j({ok:false,error:"Only PENDIENTE GRE may be sent to BETA"},409);
+ const {data:cfg}=await sb.from("configuracion").select("ruc").eq("id",1).single();if(!cfg?.ruc)return j({ok:false,error:"Issuer RUC missing"},409);
+ const filename=`${cfg.ruc}-09-${g.serie}-${g.correlativo}.zip`,path=`gre/zip/${filename}`;
+ const {data:z,error:ze}=await sb.storage.from("sunat-private").download(path);if(ze||!z)return j({ok:false,error:"GRE ZIP unavailable"},409);
+ const bytes=new Uint8Array(await z.arrayBuffer());let raw="";for(const x of bytes)raw+=String.fromCharCode(x);const content=btoa(raw);
+ const ruc=String(cfg.ruc),username=ruc+"MODDATOS",password="MODDATOS";
+ const soap=`<?xml version="1.0" encoding="UTF-8"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ser="http://service.sunat.gob.pe" xmlns:wsse="http://schemas.xmlsoap.org/ws/2002/12/secext"><soapenv:Header><wsse:Security><wsse:UsernameToken><wsse:Username>${esc(username)}</wsse:Username><wsse:Password>${esc(password)}</wsse:Password></wsse:UsernameToken></wsse:Security></soapenv:Header><soapenv:Body><ser:sendBill><fileName>${esc(filename)}</fileName><contentFile>${content}</contentFile></ser:sendBill></soapenv:Body></soapenv:Envelope>`;
+ const endpoint="https://e-beta.sunat.gob.pe/ol-ti-itemision-guia-gem-beta/billService",started=new Date().toISOString();
+ const res=await fetch(endpoint,{method:"POST",headers:{"content-type":"text/xml;charset=UTF-8","SOAPAction":""},body:soap});const text=await res.text();
+ const payload=text.match(/<(?:\w+:)?applicationResponse[^>]*>([\s\S]*?)<\/(?:\w+:)?applicationResponse>/i)?.[1]||text.match(/<(?:\w+:)?return[^>]*>([\s\S]*?)<\/(?:\w+:)?return>/i)?.[1];
+ let cdrPath:string|null=null,responseCode:string|null=null,description:string|null=null;
+ if(res.ok&&payload){try{const bin=atob(payload.trim());const out=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)out[i]=bin.charCodeAt(i);cdrPath="gre/cdr/R-"+filename;await sb.storage.from("sunat-private").upload(cdrPath,out,{contentType:"application/zip",upsert:true});const files=unzipSync(out);const xmlName=Object.keys(files).find(n=>n.toLowerCase().endsWith(".xml"));if(xmlName){const x=strFromU8(files[xmlName]);responseCode=tag(x,"ResponseCode");description=tag(x,"Description");}}catch(e){description="CDR processing error: "+(e instanceof Error?e.message:String(e));}}
+ const fault=tag(text,"faultstring");const accepted=responseCode==="0";const state=accepted?"ACEPTADO_BETA":(cdrPath?"RECHAZADO_BETA":"ERROR_BETA");const contentType=res.headers.get("content-type")||"";const ticket=tag(text,"ticket");const message=description||fault||(ticket?"SUNAT devolvió ticket "+ticket+"; recepción pendiente de consulta, sin CDR.":contentType.includes("html")?"El servicio BETA respondió HTML; no entregó CDR ni aceptación.":"Servicio BETA HTTP "+res.status+" sin CDR. La guía no ha sido aceptada.");
+ await sb.from("guias_remision").update({estado_sunat:state,sunat_codigo:responseCode,sunat_mensaje:message,enviado_sunat_at:started,respuesta_sunat_at:new Date().toISOString()}).eq("id",g.id);
+ return j({ok:res.ok,environment:"gre-beta",http_status:res.status,cdr_received:!!cdrPath,cdr_path:cdrPath,response_code:responseCode,description,accepted,ticket,content_type:contentType,diagnostic:message,production_enabled:false},res.ok?200:422);
+});

@@ -114,6 +114,10 @@ export async function crearGuiaRemision(_:ActionState,fd:FormData):Promise<Actio
  const bultosRaw=text(fd,'numero_bultos',10),bultos=bultosRaw?Number(bultosRaw):null
  if(bultos!==null&&(!Number.isInteger(bultos)||bultos<1))return fail('El número de bultos debe ser un entero mayor a cero.')
  if(modalidad==='01'&&!/^\d{11}$/.test(text(fd,'transportista_ruc',11)))return fail('Para transporte público indica el RUC de 11 dígitos del transportista.')
+ if(modalidad==='01'&&!text(fd,'transportista_nombre',120))return fail('Indica la razón social del transportista.')
+ if(!text(fd,'partida',200)||!text(fd,'llegada',200))return fail('Completa las direcciones de partida y llegada.')
+ const fecha=text(fd,'fecha',10)
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha)||!Number.isFinite(Date.parse(fecha)))return fail('Indica una fecha válida de inicio del traslado.')
  if(modalidad==='02'&&(!text(fd,'placa',20)||!text(fd,'conductor_documento',20)||!text(fd,'conductor_licencia',30)))return fail('Para transporte privado completa placa, documento y licencia del conductor.')
  if(['08','09','19'].includes(motivo_codigo)&&!text(fd,'documento_aduanero',100))return fail('Para este motivo SUNAT requiere el documento aduanero relacionado.')
  try{
@@ -179,7 +183,7 @@ export async function enviarGreBeta(fd:FormData):Promise<void>{
   const {getSupabase}=await import('@/lib/data/supabase')
   const {data,error}=await getSupabase().functions.invoke('sunat-gre-beta-send',{body:{guia_id,confirm_beta:true}})
   if(error)throw new Error(error.message)
-  if(!data?.accepted)throw new Error(data?.description||data?.error||('SUNAT GRE BETA no aceptó el documento. Código: '+(data?.response_code??'sin CDR')))
+  if(!data?.accepted)throw new Error(data?.diagnostic||data?.description||data?.error||('SUNAT GRE BETA no aceptó el documento. Código: '+(data?.response_code??'sin CDR')))
  }catch(e){console.error('enviarGreBeta',errorMessage(e))}
  revalidatePath('/guias-remision')
 }

@@ -1,0 +1,45 @@
+import "jsr:@supabase/functions-js@2.5.0/edge-runtime.d.ts";
+import { createClient } from "npm:@supabase/supabase-js@2.57.4";
+const esc=(v:unknown)=>String(v??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");
+const reply=(x:unknown,s=200)=>Response.json(x,{status:s,headers:{"cache-control":"no-store"}});
+const scheme=(doc:string)=>doc.replace(/\D/g,"").length===11?"6":doc.replace(/\D/g,"").length===8?"1":"0";
+Deno.serve(async(req)=>{
+ if(req.method!=="POST")return reply({ok:false,error:"POST required"},405);
+ const url=Deno.env.get("SUPABASE_URL"),key=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+ if(!url||!key)return reply({ok:false,error:"Backend config missing"},500);
+ const sb=createClient(url,key,{auth:{persistSession:false}});
+ const body=await req.json().catch(()=>({})); const id=body.guia_id;
+ if(!id)return reply({ok:false,error:"guia_id required"},400);
+ const [{data:g,error:ge},{data:cfg}]=await Promise.all([
+  sb.from("guias_remision").select("*").eq("id",id).single(),
+  sb.from("configuracion").select("nombre_empresa,ruc,direccion").eq("id",1).single()
+ ]);
+ if(ge||!g)return reply({ok:false,error:"GRE not found"},404);
+ if(!cfg?.ruc||!cfg?.nombre_empresa)return reply({ok:false,error:"Fiscal configuration incomplete"},409);
+ if(g.tipo!=="remitente")return reply({ok:false,error:"Only GRE Remitente is supported"},409);
+ if(g.estado_sunat!=="PENDIENTE")return reply({ok:false,error:"GRE must remain PENDIENTE while preparing XML"},409);
+ if(!/^T[A-Z0-9]{3}$/.test(g.serie))return reply({ok:false,error:"Invalid GRE series"},409);
+ if(!["01","14","02","04","18","08","09","19","13"].includes(g.motivo_codigo))return reply({ok:false,error:"Invalid SUNAT transfer reason"},409);
+ if(!/^\d{6}$/.test(g.partida_ubigeo||"")||!/^\d{6}$/.test(g.llegada_ubigeo||""))return reply({ok:false,error:"Invalid ubigeo"},409);
+ if(!["01","02"].includes(g.modalidad_transporte))return reply({ok:false,error:"Invalid transport mode"},409);
+ if(!(Number(g.peso_bruto)>0))return reply({ok:false,error:"Gross weight required"},409);
+ if(g.modalidad_transporte==="02"&&(!g.placa||!g.conductor_documento||!g.conductor_licencia))return reply({ok:false,error:"Private transport data incomplete"},409);
+ const {data:items,error:ie}=await sb.from("guia_items").select("id,producto_id,descripcion,cantidad,unidad_medida").eq("guia_id",id).order("id");
+ if(ie||!items?.length)return reply({ok:false,error:"GRE has no items"},409);
+ const now=new Date(); const peParts=new Intl.DateTimeFormat("en-CA",{timeZone:"America/Lima",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}).formatToParts(now); const pv=(t:string)=>peParts.find(p=>p.type===t)?.value||""; const issueDate=`${pv("year")}-${pv("month")}-${pv("day")}`; const issueTime=`${pv("hour")}:${pv("minute")}:${pv("second")}-05:00`;
+ const supDoc=String(cfg.ruc).replace(/\D/g,""),cusDoc=String(g.destinatario_documento||"").replace(/\D/g,"");
+ const supplier=`<cac:DespatchSupplierParty><cac:Party><cac:PartyIdentification><cbc:ID schemeID="6" schemeName="Documento de Identidad" schemeAgencyName="PE:SUNAT" schemeURI="urn:pe:gob:sunat:cpe:see:gem:catalogos:catalogo06">${esc(supDoc)}</cbc:ID></cac:PartyIdentification><cac:PartyLegalEntity><cbc:RegistrationName>${esc(cfg.nombre_empresa)}</cbc:RegistrationName></cac:PartyLegalEntity></cac:Party></cac:DespatchSupplierParty>`;
+ const customer=`<cac:DeliveryCustomerParty><cac:Party><cac:PartyIdentification><cbc:ID schemeID="${scheme(cusDoc)}" schemeName="Documento de Identidad" schemeAgencyName="PE:SUNAT" schemeURI="urn:pe:gob:sunat:cpe:see:gem:catalogos:catalogo06">${esc(cusDoc)}</cbc:ID></cac:PartyIdentification><cac:PartyLegalEntity><cbc:RegistrationName>${esc(g.destinatario_nombre)}</cbc:RegistrationName></cac:PartyLegalEntity></cac:Party></cac:DeliveryCustomerParty>`;
+ if(g.modalidad_transporte==="01"&&(!/^\\d{11}$/.test(g.transportista_ruc||"")||!g.transportista_nombre))return reply({ok:false,error:"Transporte público: RUC y razón social del transportista requeridos"},409);
+ const carrier=g.modalidad_transporte==="01"?`<cac:CarrierParty><cac:PartyIdentification><cbc:ID schemeID="6">${esc(g.transportista_ruc)}</cbc:ID></cac:PartyIdentification><cac:PartyLegalEntity><cbc:RegistrationName>${esc(g.transportista_nombre)}</cbc:RegistrationName></cac:PartyLegalEntity></cac:CarrierParty>`:"";
+ const driver=g.modalidad_transporte==="02"?`<cac:DriverPerson><cbc:ID schemeID="${scheme(String(g.conductor_documento))}" schemeName="Documento de Identidad" schemeAgencyName="PE:SUNAT" schemeURI="urn:pe:gob:sunat:cpe:see:gem:catalogos:catalogo06">${esc(g.conductor_documento)}</cbc:ID><cac:IdentityDocumentReference><cbc:ID>${esc(g.conductor_licencia)}</cbc:ID></cac:IdentityDocumentReference></cac:DriverPerson>`:"";
+ const vehicle=g.modalidad_transporte==="02"?`<cac:TransportHandlingUnit><cac:TransportEquipment><cbc:ID>${esc(g.placa)}</cbc:ID></cac:TransportEquipment></cac:TransportHandlingUnit>`:"";
+ const shipment=`<cac:Shipment><cbc:ID>SUNAT_Envio</cbc:ID><cbc:HandlingCode listAgencyName="PE:SUNAT" listName="Motivo de traslado" listURI="urn:pe:gob:sunat:cpe:see:gem:catalogos:catalogo20">${esc(g.motivo_codigo)}</cbc:HandlingCode>${g.motivo_codigo==="13"?`<cbc:HandlingInstructions>${esc(g.motivo_detalle)}</cbc:HandlingInstructions>`:""}<cbc:GrossWeightMeasure unitCode="${esc(g.peso_unidad||"KGM")}">${esc(g.peso_bruto)}</cbc:GrossWeightMeasure><cac:ShipmentStage><cbc:TransportModeCode listAgencyName="PE:SUNAT" listName="Modalidad de traslado" listURI="urn:pe:gob:sunat:cpe:see:gem:catalogos:catalogo18">${esc(g.modalidad_transporte)}</cbc:TransportModeCode><cac:TransitPeriod><cbc:StartDate>${esc(g.fecha_inicio_traslado)}</cbc:StartDate></cac:TransitPeriod>${carrier}${driver}</cac:ShipmentStage><cac:Delivery><cac:DeliveryAddress><cbc:ID schemeAgencyName="PE:INEI" schemeName="Ubigeos">${esc(g.llegada_ubigeo)}</cbc:ID><cac:AddressLine><cbc:Line>${esc(g.punto_llegada)}</cbc:Line></cac:AddressLine></cac:DeliveryAddress><cac:Despatch><cac:DespatchAddress><cbc:ID schemeAgencyName="PE:INEI" schemeName="Ubigeos">${esc(g.partida_ubigeo)}</cbc:ID><cac:AddressLine><cbc:Line>${esc(g.punto_partida)}</cbc:Line></cac:AddressLine></cac:DespatchAddress><cac:DespatchParty><cac:PartyIdentification><cbc:ID schemeID="6" schemeName="Documento de Identidad" schemeAgencyName="PE:SUNAT" schemeURI="urn:pe:gob:sunat:cpe:see:gem:catalogos:catalogo06">${esc(supDoc)}</cbc:ID></cac:PartyIdentification></cac:DespatchParty></cac:Despatch></cac:Delivery>${vehicle}</cac:Shipment>`;
+ const lines=items.map((x:any,i:number)=>`<cac:DespatchLine><cbc:ID>${i+1}</cbc:ID><cbc:DeliveredQuantity unitCode="${esc(x.unidad_medida||"NIU")}">${esc(x.cantidad)}</cbc:DeliveredQuantity><cac:OrderLineReference><cbc:LineID>${i+1}</cbc:LineID></cac:OrderLineReference><cac:Item><cbc:Description>${esc(x.descripcion)}</cbc:Description></cac:Item></cac:DespatchLine>`).join("");
+ const xml=`<?xml version="1.0" encoding="UTF-8"?><DespatchAdvice xmlns="urn:oasis:names:specification:ubl:schema:xsd:DespatchAdvice-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2" xmlns:ext="urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2"><ext:UBLExtensions><ext:UBLExtension><ext:ExtensionContent/></ext:UBLExtension></ext:UBLExtensions><cbc:UBLVersionID>2.1</cbc:UBLVersionID><cbc:CustomizationID>2.0</cbc:CustomizationID><cbc:ID>${esc(g.serie)}-${g.correlativo}</cbc:ID><cbc:IssueDate>${issueDate}</cbc:IssueDate><cbc:IssueTime>${issueTime}</cbc:IssueTime><cbc:DespatchAdviceTypeCode listAgencyName="PE:SUNAT" listName="Tipo de Documento" listURI="urn:pe:gob:sunat:cpe:see:gem:catalogos:catalogo01">09</cbc:DespatchAdviceTypeCode>${`<cac:Signature><cbc:ID>${esc(supDoc)}</cbc:ID><cac:SignatoryParty><cac:PartyIdentification><cbc:ID>${esc(supDoc)}</cbc:ID></cac:PartyIdentification><cac:PartyName><cbc:Name>${esc(cfg.nombre_empresa)}</cbc:Name></cac:PartyName></cac:SignatoryParty><cac:DigitalSignatureAttachment><cac:ExternalReference><cbc:URI>#SignatureSP</cbc:URI></cac:ExternalReference></cac:DigitalSignatureAttachment></cac:Signature>`}${supplier}${customer}${shipment}${lines}</DespatchAdvice>`;
+ const name=`${cfg.ruc}-09-${g.serie}-${g.correlativo}.xml`,path=`gre/draft/${name}`;
+ const up=await sb.storage.from("sunat-private").upload(path,new Blob([xml],{type:"application/xml"}),{contentType:"application/xml",upsert:true});
+ if(up.error)return reply({ok:false,error:"Could not store GRE UBL draft",detail:up.error.message},500);
+ await sb.from("guias_remision").update({documento_path:path,sunat_mensaje:"UBL 2.1 GRE generado. Pendiente de firma y envío."}).eq("id",id);
+ return reply({ok:true,stage:"gre-ubl-generated",filename:name,documento_path:path,document_type:"09",signed:false,sent:false});
+});
