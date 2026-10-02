@@ -5,6 +5,7 @@ import { AppSidebar } from '@/components/app-sidebar'
 import { AppHeader } from '@/components/app-header'
 import { DemoBanner } from '@/components/demo-banner'
 import { MegaAssistant } from '@/components/mega-assistant'
+import { PwaRegister } from '@/components/pwa-register'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { Toaster } from '@/components/ui/sonner'
 import { getDataMode } from '@/lib/data'
@@ -14,37 +15,23 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-geist-mono' })
 
 export const metadata: Metadata = {
-  title: {
-    default: 'MEGA XL | Inventario y Ventas',
-    template: '%s | MEGA XL',
-  },
-  description:
-    'MEGA XL: sistema de gestión de inventario y ventas. Controla productos, stock, clientes y reportes.',
+  title: { default: 'MEGA XL | Inventario y Ventas', template: '%s | MEGA XL' },
+  description: 'MEGA XL: sistema de gestión de inventario y ventas. Controla productos, stock, clientes y reportes.',
   generator: 'v0.app',
-  icons: {
-    icon: [
-      { url: '/icon-light-32x32.png', media: '(prefers-color-scheme: light)' },
-      { url: '/icon-dark-32x32.png', media: '(prefers-color-scheme: dark)' },
-      { url: '/icon.svg', type: 'image/svg+xml' },
-    ],
-    apple: '/apple-icon.png',
-  },
+  manifest: '/manifest.webmanifest',
+  applicationName: 'MEGA XL CRM',
+  appleWebApp: { capable: true, title: 'MEGA XL', statusBarStyle: 'default' },
+  icons: { icon: [{ url: '/icon.svg', type: 'image/svg+xml' }], apple: '/icon.svg' },
 }
 
-export const viewport: Viewport = {
-  colorScheme: 'light',
-  themeColor: '#2f7fd1',
-}
+export const viewport: Viewport = { colorScheme: 'light', themeColor: '#2f7fd1' }
 
-export default async function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode
-}>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const mode = await getDataMode()
   return (
     <html lang="es" className={`${inter.variable} ${geistMono.variable}`}>
       <body className="antialiased">
+        <PwaRegister />
         <SidebarProvider>
           <AppSidebar />
           <SidebarInset>
