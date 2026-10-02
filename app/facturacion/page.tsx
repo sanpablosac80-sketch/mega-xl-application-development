@@ -10,13 +10,19 @@ export const metadata: Metadata = { title: 'Facturación' }
 
 export default async function FacturacionPage() {
   const ventas = await (await getRepository()).listVentas()
-  const { data: pendientes = [] } = await getSupabase().from('comprobantes').select('id,tipo,serie,correlativo,total,estado_sunat').in('estado_sunat',['PENDIENTE','ERROR_BETA']).order('created_at',{ascending:false}).limit(10)
+  const { data: comprobantes = [] } = await getSupabase()
+    .from('comprobantes')
+    .select('id,tipo,serie,correlativo,total,estado_sunat,sunat_mensaje,cdr_path,cdr_recibido_at')
+    .in('estado_sunat',['PENDIENTE','ERROR_BETA','RECHAZADO_BETA','ACEPTADO_BETA'])
+    .order('created_at',{ascending:false})
+    .limit(20)
+
+  const pendientes = comprobantes?.filter(c => c.estado_sunat !== 'ACEPTADO_BETA') ?? []
+  const aceptados = comprobantes?.filter(c => c.estado_sunat === 'ACEPTADO_BETA') ?? []
+
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
-      <PageHeader
-        title="Facturación"
-        description="Crea boletas y facturas desde ventas registradas."
-      />
+      <PageHeader title="Facturación" description="Crea boletas y facturas desde ventas registradas." />
       <Card>
         <CardHeader><CardTitle>Nuevo comprobante</CardTitle></CardHeader>
         <CardContent>
@@ -26,11 +32,30 @@ export default async function FacturacionPage() {
           </p>
         </CardContent>
       </Card>
+
       <Card>
         <CardHeader><CardTitle>Pruebas SUNAT BETA pendientes</CardTitle></CardHeader>
         <CardContent className="grid gap-3">
-          {pendientes?.length ? pendientes.map(c => <div key={c.id} className="rounded-lg border p-3"><p className="mb-2 text-sm">{`${c.tipo === 'factura' ? 'Factura' : 'Boleta'} ${c.serie}-${c.correlativo} · S/ ${Number(c.total).toFixed(2)} · ${c.estado_sunat}`}</p><ProcesarComprobanteBetaForm id={c.id} label={`${c.serie}-${c.correlativo}`} /></div>) : <p className="text-sm text-muted-foreground">No hay comprobantes pendientes.</p>}
+          {pendientes.length ? pendientes.map(c => (
+            <div key={c.id} className="rounded-lg border p-3">
+              <p className="mb-2 text-sm">{`${c.tipo === 'factura' ? 'Factura' : 'Boleta'} ${c.serie}-${c.correlativo} · S/ ${Number(c.total).toFixed(2)} · ${c.estado_sunat}`}</p>
+              <ProcesarComprobanteBetaForm id={c.id} label={`${c.serie}-${c.correlativo}`} />
+            </div>
+          )) : <p className="text-sm text-muted-foreground">No hay comprobantes pendientes.</p>}
           <p className="text-xs text-muted-foreground">Esta acción usa únicamente SUNAT BETA. El envío a producción permanece bloqueado.</p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Comprobantes aceptados por SUNAT BETA</CardTitle></CardHeader>
+        <CardContent className="grid gap-3">
+          {aceptados.length ? aceptados.map(c => (
+            <div key={c.id} className="rounded-lg border p-3">
+              <p className="font-medium text-green-700">{`${c.tipo === 'factura' ? 'Factura' : 'Boleta'} ${c.serie}-${c.correlativo} · ACEPTADO POR SUNAT BETA`}</p>
+              <p className="text-sm">{`S/ ${Number(c.total).toFixed(2)} · ${c.sunat_mensaje || 'CDR aceptado'}`}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{c.cdr_path ? 'CDR recibido y almacenado' : 'CDR no disponible'}</p>
+            </div>
+          )) : <p className="text-sm text-muted-foreground">Todavía no hay comprobantes aceptados en BETA.</p>}
         </CardContent>
       </Card>
     </div>
