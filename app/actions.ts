@@ -109,11 +109,11 @@ export async function crearGuiaRemision(_:ActionState,fd:FormData):Promise<Actio
  if(motivo_codigo==='13'&&!motivo_detalle)return fail('Cuando seleccionas Otros debes especificar el motivo.')
  if(!['01','02'].includes(modalidad))return fail('Selecciona una modalidad SUNAT válida.')
  const partida_ubigeo=text(fd,'partida_ubigeo',6),llegada_ubigeo=text(fd,'llegada_ubigeo',6),peso=money(fd,'peso_bruto')
- if(!/^\\d{6}$/.test(partida_ubigeo)||!/^\\d{6}$/.test(llegada_ubigeo))return fail('Los ubigeos de partida y llegada deben tener 6 dígitos.')
+ if(!/^\d{6}$/.test(partida_ubigeo)||!/^\d{6}$/.test(llegada_ubigeo))return fail('Los ubigeos de partida y llegada deben tener 6 dígitos.')
  if(!(peso>0))return fail('Indica un peso bruto total mayor a cero.')
  const bultosRaw=text(fd,'numero_bultos',10),bultos=bultosRaw?Number(bultosRaw):null
  if(bultos!==null&&(!Number.isInteger(bultos)||bultos<1))return fail('El número de bultos debe ser un entero mayor a cero.')
- if(modalidad==='01'&&!/^\\d{11}$/.test(text(fd,'transportista_ruc',11)))return fail('Para transporte público indica el RUC de 11 dígitos del transportista.')
+ if(modalidad==='01'&&!/^\d{11}$/.test(text(fd,'transportista_ruc',11)))return fail('Para transporte público indica el RUC de 11 dígitos del transportista.')
  if(modalidad==='02'&&(!text(fd,'placa',20)||!text(fd,'conductor_documento',20)||!text(fd,'conductor_licencia',30)))return fail('Para transporte privado completa placa, documento y licencia del conductor.')
  if(['08','09','19'].includes(motivo_codigo)&&!text(fd,'documento_aduanero',100))return fail('Para este motivo SUNAT requiere el documento aduanero relacionado.')
  try{
