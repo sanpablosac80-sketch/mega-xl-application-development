@@ -38,7 +38,7 @@ export default async function FacturacionPage() {
         <CardContent className="grid gap-3">
           {pendientes.length ? pendientes.map(c => (
             <div key={c.id} className="rounded-lg border p-3">
-              <p className="mb-2 text-sm">{`${c.tipo === 'factura' ? 'Factura' : 'Boleta'} ${c.serie}-${c.correlativo} · S/ ${Number(c.total).toFixed(2)} · ${c.estado_sunat}`}</p>
+              <p className="mb-2 text-sm">{`${c.tipo === 'factura' ? 'Factura' : c.tipo === 'nota_credito' ? 'Nota de Crédito' : 'Boleta'} ${c.serie}-${c.correlativo} · S/ ${Number(c.total).toFixed(2)} · ${c.estado_sunat}`}</p>
               <ProcesarComprobanteBetaForm id={c.id} label={`${c.serie}-${c.correlativo}`} />
             </div>
           )) : <p className="text-sm text-muted-foreground">No hay comprobantes pendientes.</p>}
@@ -51,7 +51,7 @@ export default async function FacturacionPage() {
         <CardContent className="grid gap-3">
           {aceptados.length ? aceptados.map(c => (
             <div key={c.id} className="rounded-lg border p-3">
-              <p className="font-medium text-green-700">{`${c.tipo === 'factura' ? 'Factura' : 'Boleta'} ${c.serie}-${c.correlativo} · ACEPTADO POR SUNAT BETA`}</p>
+              <p className="font-medium text-green-700">{`${c.tipo === 'factura' ? 'Factura' : c.tipo === 'nota_credito' ? 'Nota de Crédito' : 'Boleta'} ${c.serie}-${c.correlativo} · ACEPTADO POR SUNAT BETA`}</p>
               <p className="text-sm">{`S/ ${Number(c.total).toFixed(2)} · ${c.sunat_mensaje || 'CDR aceptado'}`}</p>
               <p className="mt-1 text-xs text-muted-foreground">{c.cdr_path ? 'CDR recibido y almacenado' : 'CDR no disponible'}</p>
             </div>
