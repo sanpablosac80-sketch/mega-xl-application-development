@@ -32,6 +32,8 @@ export function GuiaForm({ ventas }: { ventas:{id:string;numero:number;cliente_n
   {modalidad==='02'&&<>
    <FormField id="placa" label="Placa del vehículo"><Input id="placa" name="placa" required /></FormField>
    <FormField id="conductor_documento" label="Documento conductor"><Input id="conductor_documento" name="conductor_documento" required /></FormField>
+   <FormField id="conductor_nombres" label="Nombres del conductor"><Input id="conductor_nombres" name="conductor_nombres" maxLength={100} required /></FormField>
+   <FormField id="conductor_apellidos" label="Apellidos del conductor"><Input id="conductor_apellidos" name="conductor_apellidos" maxLength={100} required /></FormField>
    <FormField id="conductor_licencia" label="Licencia conductor"><Input id="conductor_licencia" name="conductor_licencia" required /></FormField>
   </>}
   {modalidad==='01'&&<>
