@@ -130,3 +130,17 @@ export async function crearGuiaRemision(_:ActionState,fd:FormData):Promise<Actio
  }catch(e){return fail(errorMessage(e))}
  revalidateAll();return success('GRE Remitente registrada como pendiente. Aún no ha sido enviada a SUNAT.')
 }
+
+
+export async function generarGreUbl(fd:FormData):Promise<void>{
+ const guia_id=text(fd,'guia_id',64)
+ if(!guia_id) return
+ try{
+  const {getSupabase}=await import('@/lib/data/supabase')
+  const sb=getSupabase()
+  const {data,error}=await sb.functions.invoke('sunat-gre-ubl',{body:{guia_id}})
+  if(error)throw new Error(error.message)
+  if(!data?.ok)throw new Error(data?.error||'No se pudo generar el XML GRE.')
+ }catch(e){console.error('generarGreUbl',errorMessage(e))}
+ revalidatePath('/guias-remision')
+}
