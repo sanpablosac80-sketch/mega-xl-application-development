@@ -28,12 +28,20 @@ export const viewport: Viewport = { colorScheme: 'light', themeColor: '#2f7fd1' 
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const mode = await getDataMode()
+  const { createAuthClient } = await import('@/lib/auth/server')
+  const auth = await createAuthClient()
+  const { data: { user } } = await auth.auth.getUser()
+  let role: string | null = null
+  if (user) {
+    const { data } = await auth.from('perfiles_usuario').select('rol_codigo').eq('id', user.id).maybeSingle()
+    role = data?.rol_codigo ?? null
+  }
   return (
     <html lang="es" className={`${inter.variable} ${geistMono.variable}`}>
       <body className="antialiased">
         <PwaRegister />
         <SidebarProvider>
-          <AppSidebar />
+          <AppSidebar role={role} />
           <SidebarInset>
             <AppHeader />
             {mode === 'demo' && <DemoBanner />}
