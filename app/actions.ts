@@ -100,4 +100,33 @@ export async function procesarComprobanteBeta(_:ActionState,fd:FormData):Promise
   return fail(`NO ACEPTADO POR SUNAT BETA${code} · ${detail}`)
  }catch(e){revalidateAll();return fail(errorMessage(e))}
 }
-export async function crearGuiaRemision(_:ActionState,fd:FormData):Promise<ActionState>{const venta_id=text(fd,'venta_id',64),tipo=text(fd,'tipo',20);if(!venta_id)return fail('Selecciona una venta.');try{const {getSupabase}=await import('@/lib/data/supabase');const {error}=await getSupabase().rpc('crear_guia_desde_venta',{p_venta_id:venta_id,p_tipo:tipo,p_motivo:text(fd,'motivo',80)||'Venta',p_partida:text(fd,'partida',200),p_llegada:text(fd,'llegada',200),p_modalidad:text(fd,'modalidad',30)||'privado',p_transportista_ruc:text(fd,'transportista_ruc',20),p_transportista_nombre:text(fd,'transportista_nombre',120),p_placa:text(fd,'placa',20),p_conductor_documento:text(fd,'conductor_documento',20),p_conductor_licencia:text(fd,'conductor_licencia',30),p_fecha:text(fd,'fecha',10)||null});if(error)throw new Error(error.message)}catch(e){return fail(errorMessage(e))}revalidateAll();return success('Guía registrada como pendiente de SUNAT.')}
+export async function crearGuiaRemision(_:ActionState,fd:FormData):Promise<ActionState>{
+ const venta_id=text(fd,'venta_id',64),tipo=text(fd,'tipo',20),motivo_codigo=text(fd,'motivo_codigo',2),motivo_detalle=text(fd,'motivo_detalle',100),modalidad=text(fd,'modalidad',2)
+ const motivos:Record<string,string>={'01':'Venta','14':'Venta sujeta a confirmación del comprador','02':'Compra','04':'Traslado entre establecimientos de la misma empresa','18':'Traslado emisor itinerante CP','08':'Importación','09':'Exportación','19':'Traslado a zona primaria','13':'Otros'}
+ if(!venta_id)return fail('Selecciona una venta.')
+ if(tipo!=='remitente')return fail('Por ahora esta prueba corresponde a GRE Remitente.')
+ if(!motivos[motivo_codigo])return fail('Selecciona un motivo SUNAT válido.')
+ if(motivo_codigo==='13'&&!motivo_detalle)return fail('Cuando seleccionas Otros debes especificar el motivo.')
+ if(!['01','02'].includes(modalidad))return fail('Selecciona una modalidad SUNAT válida.')
+ const partida_ubigeo=text(fd,'partida_ubigeo',6),llegada_ubigeo=text(fd,'llegada_ubigeo',6),peso=money(fd,'peso_bruto')
+ if(!/^\\d{6}$/.test(partida_ubigeo)||!/^\\d{6}$/.test(llegada_ubigeo))return fail('Los ubigeos de partida y llegada deben tener 6 dígitos.')
+ if(!(peso>0))return fail('Indica un peso bruto total mayor a cero.')
+ const bultosRaw=text(fd,'numero_bultos',10),bultos=bultosRaw?Number(bultosRaw):null
+ if(bultos!==null&&(!Number.isInteger(bultos)||bultos<1))return fail('El número de bultos debe ser un entero mayor a cero.')
+ if(modalidad==='01'&&!/^\\d{11}$/.test(text(fd,'transportista_ruc',11)))return fail('Para transporte público indica el RUC de 11 dígitos del transportista.')
+ if(modalidad==='02'&&(!text(fd,'placa',20)||!text(fd,'conductor_documento',20)||!text(fd,'conductor_licencia',30)))return fail('Para transporte privado completa placa, documento y licencia del conductor.')
+ if(['08','09','19'].includes(motivo_codigo)&&!text(fd,'documento_aduanero',100))return fail('Para este motivo SUNAT requiere el documento aduanero relacionado.')
+ try{
+  const {getSupabase}=await import('@/lib/data/supabase')
+  const {error}=await getSupabase().rpc('crear_guia_desde_venta',{
+   p_venta_id:venta_id,p_tipo:tipo,p_motivo:motivos[motivo_codigo],p_motivo_codigo:motivo_codigo,p_motivo_detalle:motivo_detalle||null,
+   p_partida:text(fd,'partida',200),p_partida_ubigeo:partida_ubigeo,p_llegada:text(fd,'llegada',200),p_llegada_ubigeo:llegada_ubigeo,
+   p_modalidad:modalidad,p_transportista_ruc:text(fd,'transportista_ruc',20),p_transportista_nombre:text(fd,'transportista_nombre',120),
+   p_placa:text(fd,'placa',20),p_conductor_documento:text(fd,'conductor_documento',20),p_conductor_licencia:text(fd,'conductor_licencia',30),
+   p_fecha:text(fd,'fecha',10)||null,p_peso_bruto:peso,p_documento_aduanero:text(fd,'documento_aduanero',100)||null,
+   p_numero_contenedor:text(fd,'numero_contenedor',17)||null,p_numero_bultos:bultos,p_numero_precinto:text(fd,'numero_precinto',50)||null
+  })
+  if(error)throw new Error(error.message)
+ }catch(e){return fail(errorMessage(e))}
+ revalidateAll();return success('GRE Remitente registrada como pendiente. Aún no ha sido enviada a SUNAT.')
+}
