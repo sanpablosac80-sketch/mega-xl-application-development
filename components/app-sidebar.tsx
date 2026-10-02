@@ -17,6 +17,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar'
 import { NAV_ITEMS, isActivePath } from '@/lib/nav'
+import { MegaMascot } from '@/components/mega-mascot'
 
 export function AppSidebar() {
   const pathname = usePathname()
@@ -30,9 +31,7 @@ export function AppSidebar() {
           className="flex items-center gap-2.5 rounded-lg px-1.5 py-2"
           onClick={() => setOpenMobile(false)}
         >
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-bold tracking-tight text-primary-foreground">
-            XL
-          </span>
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-white"><MegaMascot className="size-9" /></span>
           <span className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
             <span className="text-base font-bold tracking-tight text-foreground">MEGA XL</span>
             <span className="text-xs text-muted-foreground">Inventario y ventas</span>
