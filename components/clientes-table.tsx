@@ -2,6 +2,7 @@
 
 import { eliminarCliente } from '@/app/actions'
 import { DeleteButton } from '@/components/delete-button'
+import { ClienteDialog } from '@/components/forms/cliente-dialog'
 import {
   Table,
   TableBody,
@@ -54,7 +55,8 @@ export function ClientesTable({ clientes, simbolo }: { clientes: Row[]; simbolo:
                   {formatMoney(c.totalCompras, simbolo)}
                 </TableCell>
                 <TableCell>
-                  <div className="flex justify-end">
+                  <div className="flex justify-end gap-2">
+                    <ClienteDialog cliente={c} />
                     <DeleteButton
                       label={c.nombre}
                       description="El cliente se eliminará. Sus ventas se conservarán como Cliente general."
