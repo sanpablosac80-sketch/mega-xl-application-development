@@ -170,3 +170,16 @@ export async function generarGreZip(fd:FormData):Promise<void>{
  }catch(e){console.error('generarGreZip',errorMessage(e))}
  revalidatePath('/guias-remision')
 }
+
+
+export async function enviarGreBeta(fd:FormData):Promise<void>{
+ const guia_id=text(fd,'guia_id',64)
+ if(!guia_id)return
+ try{
+  const {getSupabase}=await import('@/lib/data/supabase')
+  const {data,error}=await getSupabase().functions.invoke('sunat-gre-beta-send',{body:{guia_id,confirm_beta:true}})
+  if(error)throw new Error(error.message)
+  if(!data?.accepted)throw new Error(data?.description||data?.error||('SUNAT GRE BETA no aceptó el documento. Código: '+(data?.response_code??'sin CDR')))
+ }catch(e){console.error('enviarGreBeta',errorMessage(e))}
+ revalidatePath('/guias-remision')
+}
