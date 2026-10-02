@@ -14,7 +14,7 @@ Deno.serve(async(req:Request)=>{
  if(!profile||!profile.activo||!['A','B','C','D'].includes(profile.rol_codigo))return reply('No tienes acceso a facturación',403)
  const body=await req.json().catch(()=>null),id=body?.comprobante_id
  if(typeof id!=='string'||! /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))return reply('Comprobante no válido',400)
- const {data:d,error}=await sb.from('comprobantes').select('tipo,serie,correlativo,xml_path,estado_sunat,descuento').eq('id',id).maybeSingle()
+ const {data:d,error}=await sb.from('comprobantes').select('venta_id,tipo,serie,correlativo,xml_path,estado_sunat,descuento').eq('id',id).maybeSingle()
  if(error)return reply('No se pudo consultar el comprobante',500)
  if(!d)return reply('Comprobante no encontrado',404)
  if(d.tipo!=='factura')return reply('La descarga PDF está disponible para facturas',422)
@@ -22,7 +22,14 @@ Deno.serve(async(req:Request)=>{
  const {data:xml,error:xe}=await sb.storage.from('sunat-private').download(d.xml_path)
  if(xe||!xml)return reply('XML no disponible',409)
  try{
-  const result=await renderInvoice(await xml.text(),d.estado_sunat)
+  let addresses={supplierAddress:'',customerAddress:''}
+  if(String(d.estado_sunat).includes('BETA')){
+   const {data:cfg}=await sb.from('configuracion').select('direccion').eq('id',1).maybeSingle()
+   const {data:venta}=await sb.from('ventas').select('cliente_id').eq('id',d.venta_id).maybeSingle()
+   const {data:cliente}=venta?.cliente_id ? await sb.from('clientes').select('direccion').eq('id',venta.cliente_id).maybeSingle() : {data:null}
+   addresses={supplierAddress:cfg?.direccion||'',customerAddress:cliente?.direccion||''}
+  }
+  const result=await renderInvoice(await xml.text(),d.estado_sunat,addresses)
   if(Number(d.descuento)>0 && Number(result.invoice.discount)===0)return reply('El descuento registrado no está consignado en el XML; corrige la emisión antes de imprimir',409)
   if(result.invoice.id!==`${d.serie}-${d.correlativo}`)return reply('El XML no corresponde al comprobante',409)
   return new Response(result.bytes,{headers:{'Content-Type':'application/pdf','Content-Disposition':`attachment; filename="${result.filename}"`,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}})

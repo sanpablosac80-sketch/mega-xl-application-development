@@ -42,8 +42,10 @@ function moneyWords(total,currency){
   if(!Number.isSafeInteger(n)||n<0||n>=1000000000000)return total+' '+currency;
   return words(n)+' CON '+cents+'/100 '+({'PEN':'SOLES','USD':'DÓLARES AMERICANOS'}[currency]||currency);
 }
-export async function renderInvoice(xml, status) {
+export async function renderInvoice(xml, status, addresses = {}) {
   const d=readInvoice(xml), pdf=await PDFDocument.create();
+  const betaAddressFallback=/BETA/.test(status);
+  if(betaAddressFallback){d.supplierAddress ||= addresses.supplierAddress || '';d.customerAddress ||= addresses.customerAddress || '';}
   const font=await pdf.embedFont(StandardFonts.Helvetica), bold=await pdf.embedFont(StandardFonts.HelveticaBold);
   const blue=rgb(.08,.40,.64), pale=rgb(.92,.97,.99), ink=rgb(.13,.20,.27);
   // Standard PDF fonts support Latin-1. Unsupported characters are replaced visibly.
@@ -120,7 +122,7 @@ export async function renderInvoice(xml, status) {
   let footerY=y; text('Representación impresa de la factura electrónica',150,footerY,9,true);footerY-=17;
   for(const line of wrap('Estado: '+status,410,8)){text(line,150,footerY,8);footerY-=12;}
   for(const line of wrap('Valor resumen: '+(d.digest||'XML sin firma'),410,7)){text(line,150,footerY,7);footerY-=11;}
-  text('Datos reproducidos del XML conservado por Mega XL.',150,footerY-5,8);
+  text(betaAddressFallback && (addresses.supplierAddress || addresses.customerAddress) ? 'BETA: direcciones complementadas desde los datos del CRM.' : 'Datos reproducidos del XML conservado por Mega XL.',150,footerY-5,8);
   pdf.setTitle('MEGA XL - Factura '+d.id);pdf.setAuthor('MEGA XL');
   return {bytes:await pdf.save(),filename:d.ruc+'-01-'+d.id+'.pdf',invoice:d};
 }
