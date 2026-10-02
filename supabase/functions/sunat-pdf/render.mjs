@@ -52,10 +52,22 @@ export async function renderInvoice(xml, status) {
   function tableHeader(){page.drawRectangle({x:32,y:y-7,width:531,height:23,color:pale});for(const [s,x] of [['Cant.',37],['Und.',80],['Descripción',121],['V. unit.',355],['P. unit.',420],['Valor neto',493]])text(s,x,y,8,true);y-=28;}
   tableHeader();
   for(const l of d.lines){const description=wrap(l.description || '[Sin descripción en XML]',222,9);for(let start=0;start<description.length;){if(y<85){newPage();tableHeader();}const count=Math.min(description.length-start,Math.floor((y-58)/13));if(count<1){newPage();tableHeader();continue;}if(start===0){text(l.quantity,37,y,8);text(l.unit,80,y,8);text(l.unitValue,355,y,8);text(l.unitPrice?amount(l.unitPrice):'-',420,y,8);text(l.net,493,y,8);}for(const s of description.slice(start,start+count)){text(s,121,y);y-=13;}start+=count;}y-=10;}
-  room(170);y-=8;
-  for(const t of d.taxes){block(t.name+' - base: '+t.base+' / tributo: '+t.tax,340,220);}
-  if(d.discount)block('Descuento total: '+amount(d.discount),340,220);
-  block('TOTAL '+d.currency+' '+d.total,340,220,14,true);
+  const summary=[];
+  for(const t of d.taxes){summary.push([t.name+' - base imponible',t.base]);summary.push([t.name,t.tax]);}
+  if(d.discount)summary.push(['Descuento total',amount(d.discount)]);
+  summary.push(['TOTAL '+d.currency,d.total]);
+  const summaryHeight=summary.length*27+20;
+  room(summaryHeight+30);y-=14;
+  page.drawRectangle({x:310,y:y-summaryHeight+15,width:253,height:summaryHeight,color:pale});
+  for(let i=0;i<summary.length;i++){
+    const [label,number]=summary[i],isTotal=i===summary.length-1,size=isTotal?12:10;
+    text(label,322,y,size,isTotal);
+    const f=isTotal?bold:font;
+    text(number,551-f.widthOfTextAtSize(clean(number),size),y,size,isTotal);
+    if(isTotal){page.drawLine({start:{x:322,y:y+18},end:{x:551,y:y+18},thickness:.6,color:blue});}
+    y-=27;
+  }
+  y-=14;
   if(d.installments.length){room(40);block('Monto pendiente: '+value(d.payment?.Amount),32,531);for(const t of d.installments){room(35);block(value(t.PaymentMeansID)+' | '+value(t.PaymentDueDate)+' | '+value(t.Amount)+' '+d.currency,32,531);}}
   for(const note of d.notes){room(35);block(note,32,531);}
   room(165);y-=12;
