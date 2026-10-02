@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { GuiaForm } from '@/components/forms/guia-form'
 import { getRepository } from '@/lib/data'
 import { getSupabase } from '@/lib/data/supabase'
-import { generarGreUbl, firmarGre } from '@/app/actions'
+import { generarGreUbl, firmarGre, generarGreZip } from '@/app/actions'
 
 export const metadata: Metadata={title:'Guías de remisión'}
 
@@ -18,7 +18,7 @@ export default async function GuiasPage(){
   <Card><CardHeader><CardTitle>GRE registradas</CardTitle></CardHeader><CardContent className="space-y-3">
    {(guias??[]).length===0?<p className="text-sm text-muted-foreground">Aún no hay GRE registradas.</p>:(guias??[]).map(g=><div key={g.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
     <div><p className="font-medium">{g.serie}-{g.correlativo} · {g.motivo_traslado}</p><p className="text-xs text-muted-foreground">Estado SUNAT: {g.estado_sunat}{g.documento_path?' · XML generado':''}</p>{g.sunat_mensaje&&<p className="text-xs text-muted-foreground">{g.sunat_mensaje}</p>}</div>
-    {g.estado_sunat==='PENDIENTE'&&!g.documento_path&&<form action={generarGreUbl}><input type="hidden" name="guia_id" value={g.id}/><Button type="submit">Generar XML GRE</Button></form>}{g.estado_sunat==='PENDIENTE'&&g.documento_path?.startsWith('gre/draft/')&&<form action={firmarGre}><input type="hidden" name="guia_id" value={g.id}/><Button type="submit">Firmar y validar GRE</Button></form>}
+    {g.estado_sunat==='PENDIENTE'&&!g.documento_path&&<form action={generarGreUbl}><input type="hidden" name="guia_id" value={g.id}/><Button type="submit">Generar XML GRE</Button></form>}{g.estado_sunat==='PENDIENTE'&&g.documento_path?.startsWith('gre/draft/')&&<form action={firmarGre}><input type="hidden" name="guia_id" value={g.id}/><Button type="submit">Firmar y validar GRE</Button></form>}{g.estado_sunat==='PENDIENTE'&&g.documento_path?.startsWith('gre/signed/')&&<form action={generarGreZip}><input type="hidden" name="guia_id" value={g.id}/><Button type="submit">Generar ZIP GRE</Button></form>}
    </div>)}
   </CardContent></Card>
  </div>
