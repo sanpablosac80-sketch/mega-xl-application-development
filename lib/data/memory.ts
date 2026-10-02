@@ -184,6 +184,11 @@ export const memoryRepository: Repository = {
   async createCliente(input) {
     store().clientes.push({ ...input, id: crypto.randomUUID(), created_at: new Date().toISOString() })
   },
+  async updateCliente(id, input) {
+    const cliente = store().clientes.find((c) => c.id === id)
+    if (!cliente) throw new Error('Cliente no encontrado')
+    Object.assign(cliente, input)
+  },
   async deleteCliente(id) {
     const s = store()
     s.clientes = s.clientes.filter((c) => c.id !== id)
