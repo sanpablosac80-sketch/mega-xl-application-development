@@ -183,3 +183,20 @@ export async function enviarGreBeta(fd:FormData):Promise<void>{
  }catch(e){console.error('enviarGreBeta',errorMessage(e))}
  revalidatePath('/guias-remision')
 }
+
+
+export async function validarGre(fd:FormData):Promise<void>{
+ const guia_id=text(fd,'guia_id',64)
+ if(!guia_id)return
+ try{
+  const {getSupabase}=await import('@/lib/data/supabase')
+  const sb=getSupabase()
+  const {data,error}=await sb.functions.invoke('sunat-gre-validate',{body:{guia_id}})
+  if(error)throw new Error(error.message)
+  const message=data?.ok===true
+   ? 'Validación previa GRE superada. XML firmado revisado localmente; sin envío a SUNAT.'
+   : 'Validación previa GRE con errores: '+(Array.isArray(data?.failed)?data.failed.join(', '):data?.error||'revisar XML')
+  await sb.from('guias_remision').update({sunat_mensaje:message}).eq('id',guia_id)
+ }catch(e){console.error('validarGre',errorMessage(e))}
+ revalidatePath('/guias-remision')
+}
