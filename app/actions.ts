@@ -157,3 +157,16 @@ export async function firmarGre(fd:FormData):Promise<void>{
  }catch(e){console.error('firmarGre',errorMessage(e))}
  revalidatePath('/guias-remision')
 }
+
+
+export async function generarGreZip(fd:FormData):Promise<void>{
+ const guia_id=text(fd,'guia_id',64)
+ if(!guia_id)return
+ try{
+  const {getSupabase}=await import('@/lib/data/supabase')
+  const {data,error}=await getSupabase().functions.invoke('sunat-gre-zip',{body:{guia_id}})
+  if(error)throw new Error(error.message)
+  if(!data?.ok)throw new Error(data?.detail||data?.error||'No se pudo generar el ZIP GRE.')
+ }catch(e){console.error('generarGreZip',errorMessage(e))}
+ revalidatePath('/guias-remision')
+}
