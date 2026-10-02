@@ -72,10 +72,11 @@ export async function renderInvoice(xml, status) {
   block('FECHA DE EMISIÓN: '+d.date+'     MONEDA: '+d.currency,32,531);
   block('FORMA DE PAGO: '+(value(d.payment?.PaymentMeansID)||'No consignada'),32,531);y-=18;
   function right(s,end,at,size=8,b=false){text(s,end-(b?bold:font).widthOfTextAtSize(clean(s),size),at,size,b);}
-  const edges=[32,56,90,119,290,358,425,487,563];
+
   function tableHeader(){
     page.drawRectangle({x:32,y:y-9,width:531,height:24,color:pale});
-    for(const [label,x] of [['Ítem',35],['Cant.',59],['Und.',94],['Descripción',123],['V. unit.',297],['P. unit.',365],['Dscto.',432],['V. venta',494]])text(label,x,y,8,true);
+    for(const [label,x] of [['Ítem',35],['Und.',94],['Descripción',123]])text(label,x,y,8,true);
+    for(const [label,end] of [['Cant.',86],['V. unit.',354],['P. unit.',421],['Dscto.',483],['V. venta',559]])right(label,end,y,8,true);
     y-=30;
   }
   tableHeader();
