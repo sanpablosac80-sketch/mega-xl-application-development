@@ -109,6 +109,7 @@ export interface Repository {
   registrarMovimiento(input: MovimientoInput, accessKey?: string): Promise<void>
   listClientes(): Promise<Cliente[]>
   createCliente(input: ClienteInput): Promise<void>
+  updateCliente(id: string, input: ClienteInput): Promise<void>
   deleteCliente(id: string): Promise<void>
   listVentas(): Promise<Venta[]>
   registrarVenta(input: VentaInput): Promise<void>
