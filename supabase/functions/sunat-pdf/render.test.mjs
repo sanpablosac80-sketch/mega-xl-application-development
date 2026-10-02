@@ -11,3 +11,6 @@ const result=await renderInvoice(xml,'ACEPTADO_BETA');writeFileSync('/workspace/
 const pdf=await PDFDocument.load(result.bytes);assert.equal(pdf.getPageCount(),1);
 const long=await renderInvoice(xml.replace(line,line.repeat(120)),'ACEPTADO_BETA');const pages=(await PDFDocument.load(long.bytes)).getPageCount();assert.ok(pages>2);
 console.log('OK: XML values, QR payload, malformed XML, unsupported types, PDF and pagination ('+pages+' pages).');
+
+const withDiscount=xml.replace('<cac:LegalMonetaryTotal>','<cac:AllowanceCharge><cbc:ChargeIndicator>false</cbc:ChargeIndicator><cbc:Amount>10.00</cbc:Amount></cac:AllowanceCharge><cac:LegalMonetaryTotal><cbc:AllowanceTotalAmount>15.00</cbc:AllowanceTotalAmount>').replace('<cac:InvoiceLine>','<cac:InvoiceLine><cac:AllowanceCharge><cbc:ChargeIndicator>false</cbc:ChargeIndicator><cbc:Amount>5.00</cbc:Amount></cac:AllowanceCharge>');
+const discounted=readInvoice(withDiscount);assert.equal(discounted.discount,'15.00');assert.equal(discounted.globalDiscount,'10.00');assert.equal(discounted.itemDiscount,'5.00');assert.equal(discounted.lines[0].discount,'5.00');assert.equal(d.discount,'0.00');console.log('OK: item/global discounts and XML total without double-counting.');
