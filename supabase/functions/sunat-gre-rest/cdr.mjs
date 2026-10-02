@@ -14,7 +14,12 @@ export async function readCdr(base64,expectedId){
  if(!response||Array.isArray(response))throw Error('Respuesta CDR no válida');
  const id=String(response.DocumentReference?.ID||response.Response?.ReferenceID||'');
  if(id!==expectedId)throw Error('CDR corresponde a otra guía');
+ if(response.Response?.ReferenceID&&String(response.Response.ReferenceID)!==expectedId)throw Error('Referencia del CDR no coincide con la guía');
  const code=String(response.Response?.ResponseCode??'');
  if(!/^\d+$/.test(code))throw Error('Código CDR no válido');
- return {code,accepted:code==='0',description:String(response.Response?.Description||'').slice(0,2000),bytes:await zip.generateAsync({type:'uint8array'})};
+ const description=String(response.Response?.Description||'').slice(0,2000);
+ const candidates=[response.DocumentReference?.DocumentDescription,d.Note].flat().filter(x=>typeof x==='string');
+ let qrText='';
+ for(const candidate of candidates){try{const url=new URL(candidate.trim());if(url.protocol==='https:'&&url.hostname.endsWith('.sunat.gob.pe')&&!url.username&&!url.password){qrText=url.href;break}}catch{}}
+ return {code,accepted:code==='0',description,qrText,bytes:await zip.generateAsync({type:'uint8array'})};
 }

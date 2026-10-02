@@ -14,7 +14,7 @@ Deno.serve(async(req:Request)=>{
  const {data:p}=await sb.from('perfiles_usuario').select('activo,rol_codigo').eq('id',auth.user.id).maybeSingle()
  if(!p?.activo||!['A','B'].includes(p.rol_codigo))return json({ok:false,error:'Acceso no autorizado'},403)
  const body=await req.json().catch(()=>null)
- if(!uuid.test(body?.guia_id||'')||!['prepare','send','consult'].includes(body?.action))return json({ok:false,error:'Solicitud no válida'},400)
+ if(!uuid.test(body?.guia_id||'')||!['prepare','authorize','send','consult'].includes(body?.action))return json({ok:false,error:'Solicitud no válida'},400)
  const {data:g}=await sb.from('guias_remision').select('*').eq('id',body.guia_id).maybeSingle()
  if(!g)return json({ok:false,error:'Guía no encontrada'},404)
  const {data:cfg}=await sb.from('configuracion').select('ruc').eq('id',1).maybeSingle()
@@ -42,11 +42,11 @@ Deno.serve(async(req:Request)=>{
    if(d?.arcCdr){
     const cdr=await readCdr(d.arcCdr,`${g.serie}-${g.correlativo}`)
     if(cdr.accepted&&code!=='0')throw Error('Respuesta SUNAT inconsistente; no se puede marcar la guía como aceptada')
-    const path=`gre/cdr/R-${name}.zip`
+    const path=`gre/cdr/${g.sunat_ticket}/R-${name}.zip`
     const {error}=await sb.storage.from('sunat-private').upload(path,cdr.bytes,{contentType:'application/zip',upsert:true})
     if(error)throw Error('No se pudo guardar el CDR')
     const state=cdr.accepted?'ACEPTADO':'RECHAZADO'
-    await update({estado_sunat:state,cdr_path:path,sunat_codigo:cdr.code,sunat_mensaje:cdr.description,respuesta_sunat_at:new Date().toISOString()})
+    await update({estado_sunat:state,cdr_path:path,sunat_codigo:cdr.code,sunat_mensaje:cdr.description,qr_text:cdr.accepted?cdr.qrText:null,respuesta_sunat_at:new Date().toISOString()})
     return json({ok:true,accepted:cdr.accepted,state,response_code:cdr.code,description:cdr.description,ticket:g.sunat_ticket})
    }
    if(code==='99'){await update({estado_sunat:'ERROR_REST',sunat_codigo:String(d.error?.numError||'99'),sunat_mensaje:String(d.error?.desError||'SUNAT informó un error del envío.').slice(0,2000),respuesta_sunat_at:new Date().toISOString()});return json({ok:false,accepted:false,state:'ERROR_REST'},422)}
@@ -64,6 +64,7 @@ Deno.serve(async(req:Request)=>{
   if(d?.ID!==`${g.serie}-${g.correlativo}`||d?.DespatchAdviceTypeCode!=='09'||d?.CustomizationID!=='2.0')errors.push('Identificación o versión GRE incorrecta')
   if(d?.DespatchSupplierParty?.Party?.PartyIdentification?.ID!==cfg.ruc)errors.push('RUC del XML no coincide con el emisor')
   if(!d?.UBLExtensions?.UBLExtension?.ExtensionContent?.Signature)errors.push('Falta firma digital XML')
+  if(!/^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(d?.IssueTime||''))errors.push('Hora de emisión debe tener formato HH:MM:SS')
   const shipment=d?.Shipment,stage=shipment?.ShipmentStage
   if(shipment?.HandlingCode!=='01')errors.push('Este envío inicial admite únicamente el motivo Venta; otros motivos requieren revisar sus campos específicos')
   if(!(Number(shipment?.GrossWeightMeasure)>0))errors.push('Peso bruto obligatorio')
@@ -71,8 +72,17 @@ Deno.serve(async(req:Request)=>{
   if(d?.IssueDate!==today||String(stage?.TransitPeriod?.StartDate||'')<today)errors.push('Fecha de emisión o inicio de traslado debe actualizarse antes del envío')
   if(stage?.TransportModeCode==='02'&&(!stage?.DriverPerson?.FirstName||!stage?.DriverPerson?.FamilyName))errors.push('Faltan nombres y apellidos reales del conductor en el XML')
   if(errors.length)return json({ok:false,stage:'preflight',errors,sent:false},422)
-  if(body.action==='prepare')return json({ok:true,stage:'preflight-local',sent:false,sending_enabled:Deno.env.get('SUNAT_GRE_PRODUCTION_ENABLED')==='true'})
-  if(Deno.env.get('SUNAT_GRE_PRODUCTION_ENABLED')!=='true'||body.confirm_production!==true)return json({ok:false,error:'El envío en producción está deshabilitado. Completa la revisión de los datos reales.'},409)
+  const xmlHash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(xml)))).map(x=>x.toString(16).padStart(2,'0')).join('')
+  if(body.action==='authorize'){
+   if(body.confirm_production!==true)return json({ok:false,error:'Confirma la emisión real de esta guía'},409)
+   const {error}=await sb.from('gre_emission_authorizations').upsert({guia_id:g.id,actor_id:auth.user.id,xml_sha256:xmlHash,approved_at:new Date().toISOString()})
+   if(error)throw Error('No se pudo registrar la autorización')
+   return json({ok:true,stage:'authorized-for-production',sent:false})
+  }
+  const {data:approval}=await sb.from('gre_emission_authorizations').select('actor_id,xml_sha256').eq('guia_id',g.id).maybeSingle()
+  const enabled=approval?.actor_id===auth.user.id&&approval?.xml_sha256===xmlHash
+  if(body.action==='prepare')return json({ok:true,stage:'preflight-local',sent:false,sending_enabled:enabled})
+  if(!enabled||body.confirm_production!==true)return json({ok:false,error:'Se requiere autorización para emitir esta guía con el XML revisado'},409)
   const access=await token(),zip=new JSZip();zip.file(name+'.xml',xml)
   const bytes=await zip.generateAsync({type:'uint8array',compression:'DEFLATE'})
   const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(x=>x.toString(16).padStart(2,'0')).join('')

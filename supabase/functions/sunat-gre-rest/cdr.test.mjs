@@ -15,3 +15,9 @@ test('CDR without XML is rejected',async()=>{
  const zip=new JSZip();zip.file('empty.txt','no CDR');
  await assert.rejects(readCdr(await zip.generateAsync({type:'base64'}),'T001-1'),/un XML/);
 });
+test('QR references must use HTTPS on a SUNAT host',async()=>{
+ for(const [url,expected] of [['https://e-guiaremision.sunat.gob.pe/consulta','https://e-guiaremision.sunat.gob.pe/consulta'],['https://sunat.gob.pe.evil.example/consulta','']]){
+  const zip=new JSZip();zip.file('R-test.xml',`<ApplicationResponse><DocumentResponse><Response><ReferenceID>T001-1</ReferenceID><ResponseCode>0</ResponseCode></Response><DocumentReference><ID>T001-1</ID><DocumentDescription>${url}</DocumentDescription></DocumentReference></DocumentResponse></ApplicationResponse>`);
+  assert.equal((await readCdr(await zip.generateAsync({type:'base64'}),'T001-1')).qrText,expected);
+ }
+});
