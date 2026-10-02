@@ -144,3 +144,16 @@ export async function generarGreUbl(fd:FormData):Promise<void>{
  }catch(e){console.error('generarGreUbl',errorMessage(e))}
  revalidatePath('/guias-remision')
 }
+
+
+export async function firmarGre(fd:FormData):Promise<void>{
+ const guia_id=text(fd,'guia_id',64)
+ if(!guia_id)return
+ try{
+  const {getSupabase}=await import('@/lib/data/supabase')
+  const {data,error}=await getSupabase().functions.invoke('sunat-gre-sign',{body:{guia_id}})
+  if(error)throw new Error(error.message)
+  if(!data?.ok||data?.local_verified!==true)throw new Error(data?.detail||data?.error||'La firma GRE no pudo validarse localmente.')
+ }catch(e){console.error('firmarGre',errorMessage(e))}
+ revalidatePath('/guias-remision')
+}
