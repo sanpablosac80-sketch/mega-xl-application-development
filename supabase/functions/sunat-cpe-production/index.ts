@@ -17,7 +17,7 @@ Deno.serve(async(req:Request)=>{
  const {data:p}=await sb.from('perfiles_usuario').select('activo,rol_codigo').eq('id',auth.user.id).maybeSingle()
  if(!p?.activo||!['A','B'].includes(p.rol_codigo))return j({error:'Acceso no autorizado'},403)
  const body=await req.json().catch(()=>null)
- if(!uuid.test(body?.comprobante_id||'')||!['prepare','authorize','send','consult'].includes(body?.action))return j({error:'Solicitud no válida'},400)
+ if(!uuid.test(body?.comprobante_id||'')||!['prepare','authorize','send','consult','diagnose'].includes(body?.action))return j({error:'Solicitud no válida'},400)
  const {data:d}=await sb.from('comprobantes').select('*').eq('id',body.comprobante_id).maybeSingle()
  if(!d)return j({error:'Comprobante no encontrado'},404)
  const {data:cfg}=await sb.from('configuracion').select('nombre_empresa,ruc,direccion').eq('id',1).single()
@@ -32,8 +32,8 @@ Deno.serve(async(req:Request)=>{
   if(!user||!password)throw Error('Credenciales SOL incompletas')
   const endpoint=consult?'https://e-factura.sunat.gob.pe/ol-it-wsconscpegem/billConsultService':'https://e-factura.sunat.gob.pe/ol-ti-itcpfegem/billService'
   const xml=`<?xml version="1.0"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ser="http://service.sunat.gob.pe" xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"><soapenv:Header><wsse:Security><wsse:UsernameToken><wsse:Username>${esc(user.startsWith(cfg.ruc)?user:cfg.ruc+user)}</wsse:Username><wsse:Password>${esc(password)}</wsse:Password></wsse:UsernameToken></wsse:Security></soapenv:Header><soapenv:Body><ser:${method}>${payload}</ser:${method}></soapenv:Body></soapenv:Envelope>`
-  const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'text/xml;charset=UTF-8',SOAPAction:''},body:xml,signal:AbortSignal.timeout(25000)})
-  const text=await response.text();if(text.length>10_000_000||/<!DOCTYPE|<!ENTITY/i.test(text)||XMLValidator.validate(text)!==true)throw Error('Respuesta SUNAT no verificable')
+  const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'text/xml;charset=UTF-8',SOAPAction:'urn:'+method},body:xml,signal:AbortSignal.timeout(25000)})
+  const text=await response.text();if(!text.trim())throw Error('SUNAT devolvió una respuesta vacía (HTTP '+response.status+'); no acredita aceptación ni autenticación');if(text.length>10_000_000||/<!DOCTYPE|<!ENTITY/i.test(text)||XMLValidator.validate(text)!==true)throw Error('Respuesta SUNAT no verificable')
   return {http:response.status,body:parser.parse(text).Envelope?.Body}
  }
  async function finish(cdrBase64:string,job:any){
@@ -79,6 +79,7 @@ Deno.serve(async(req:Request)=>{
    await patchDocument({estado_sunat:'PREPARADO_PRODUCCION',xml_path:xmlPath,zip_path:zipPath,sunat_mensaje:'Preparado para revisión. Todavía no enviado a SUNAT.'})
    return j({ok:true,state:'PREPARADO',prepared:true,message:'XML firmado y expediente preparado. Revisa el PDF antes de emitir.'})
   }
+  if(body.action==='diagnose'){const r=await soap('getStatus','<ticket>000000000000000000</ticket>');const fault=r.body?.Fault;return j({ok:!fault,http:r.http,code:String(fault?.faultcode||''),message:String(fault?.faultstring||r.body?.getStatusResponse?.status?.statusMessage||'Consulta sin CDR'),configured_user:Deno.env.get('SUNAT_SOL_USER')?.trim(),read_only:true})}
   if(!existing)return j({error:'Prepara primero el comprobante'},409)
   if(body.action==='authorize'){
    if(body.confirm_production!==true||existing.state!=='PREPARADO')return j({error:'Confirma la emisión real de un comprobante preparado'},409)
