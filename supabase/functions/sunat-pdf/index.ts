@@ -17,10 +17,22 @@ Deno.serve(async(req:Request)=>{
  const {data:d,error}=await sb.from('comprobantes').select('venta_id,tipo,serie,correlativo,xml_path,estado_sunat,descuento').eq('id',id).maybeSingle()
  if(error)return reply('No se pudo consultar el comprobante',500)
  if(!d)return reply('Comprobante no encontrado',404)
- if(d.tipo!=='factura')return reply('La descarga PDF está disponible para facturas',422)
  if(!d.xml_path)return reply('Genera el XML de la factura primero',409)
+ const {data:job}=await sb.from('cpe_production_jobs').select('state,cdr_path,xml_path').eq('comprobante_id',id).maybeSingle()
+ if(!String(d.estado_sunat).includes('BETA') && (!job||job.xml_path!==d.xml_path))return reply('Expediente de producción no disponible',409)
+ if(d.estado_sunat==='ACEPTADO'&&(!job?.cdr_path||job.state!=='ACEPTADO'))return reply('Aceptación de producción no confirmada',409)
+ const type=body?.type||'pdf'
+ if(!['pdf','xml','cdr'].includes(type))return reply('Tipo de descarga no válido',400)
+ if(type==='cdr'){
+  const path=job?.cdr_path
+  if(!path)return reply('CDR de producción no disponible',409)
+  const {data:file}=await sb.storage.from('sunat-private').download(path)
+  if(!file)return reply('CDR no disponible',409)
+  return new Response(await file.arrayBuffer(),{headers:{'Content-Type':'application/zip','Content-Disposition':`attachment; filename="CDR-${d.serie}-${d.correlativo}.zip"`,'Cache-Control':'private, no-store'}})
+ }
  const {data:xml,error:xe}=await sb.storage.from('sunat-private').download(d.xml_path)
  if(xe||!xml)return reply('XML no disponible',409)
+ if(type==='xml')return new Response(await xml.arrayBuffer(),{headers:{'Content-Type':'application/xml','Content-Disposition':`attachment; filename="${d.serie}-${d.correlativo}.xml"`,'Cache-Control':'private, no-store'}})
  try{
   let addresses={supplierAddress:'',customerAddress:''}
   if(String(d.estado_sunat).includes('BETA')){

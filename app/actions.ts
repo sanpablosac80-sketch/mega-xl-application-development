@@ -56,31 +56,36 @@ export async function crearComprobante(_:ActionState,fd:FormData):Promise<Action
  const venta_id=text(fd,'venta_id',64),tipo=text(fd,'tipo',20)
  if(!venta_id||!['factura','boleta'].includes(tipo))return fail('Selecciona una venta y tipo de comprobante.')
  try{
-  const {getSupabase}=await import('@/lib/data/supabase')
-  const sb=getSupabase()
-  const {data:comprobanteId,error}=await sb.rpc('crear_comprobante_desde_venta',{p_venta_id:venta_id,p_tipo:tipo})
+  const {createAuthClient}=await import('@/lib/auth/server')
+  const sb=await createAuthClient()
+  const {data:{user}}=await sb.auth.getUser()
+  if(!user)return fail('Inicia sesión.')
+  const {data:p}=await sb.from('perfiles_usuario').select('activo,rol_codigo').eq('id',user.id).single()
+  if(!p?.activo||!['A','B'].includes(p.rol_codigo))return fail('Solo administración o gerencia puede preparar comprobantes.')
+  const {data:id,error}=await sb.rpc('crear_comprobante_desde_venta',{p_venta_id:venta_id,p_tipo:tipo})
   if(error)throw new Error(error.message)
-  if(!comprobanteId)throw new Error('No se recibió el identificador del comprobante.')
-  const invoke=async(name:string,body:Record<string,unknown>)=>{
-   const {data,error}=await sb.functions.invoke(name,{body})
-   if(error)throw new Error(`${name}: ${error.message}`)
-   if(!data?.ok)throw new Error(`${name}: ${data?.error||'la etapa no terminó correctamente'}`)
-   return data
-  }
-  await invoke('sunat-ubl',{comprobante_id:comprobanteId})
-  await invoke('sunat-sign',{comprobante_id:comprobanteId})
-  await invoke('sunat-zip',{comprobante_id:comprobanteId})
-  const beta=await invoke('sunat-beta-send',{comprobante_id:comprobanteId,confirm_beta:true})
+  if(!id)throw new Error('No se recibió el identificador del comprobante.')
   revalidateAll()
-  return success(`${tipo==='factura'?'Factura':'Boleta'} creada. UBL firmado, ZIP generado y prueba SUNAT BETA ejecutada${beta.cdr_received?' con CDR recibido':''}. Producción permanece bloqueada.`)
+  return success('Comprobante registrado. Prepara su expediente, revisa el PDF y confirma la emisión real en el listado.')
  }catch(e){revalidateAll();return fail(errorMessage(e))}
+}
+export async function crearNotaCredito(_:ActionState,fd:FormData):Promise<ActionState>{
+ const referencia=text(fd,'comprobante_id',64),descripcion=text(fd,'descripcion',200)
+ if(!referencia||descripcion.length<5)return fail('Selecciona el comprobante e indica el motivo de anulación.')
+ try{
+  const {createAuthClient}=await import('@/lib/auth/server');const sb=await createAuthClient()
+  const {data,error}=await sb.rpc('crear_nota_credito_produccion',{p_referencia:referencia,p_descripcion:descripcion})
+  if(error)throw new Error(error.message)
+  if(!data)throw new Error('No se recibió la nota.')
+  revalidateAll();return success('Nota de crédito registrada por anulación total. Prepara y revisa su expediente antes de emitir.')
+ }catch(e){return fail(errorMessage(e))}
 }
 export async function procesarComprobanteBeta(_:ActionState,fd:FormData):Promise<ActionState>{
  const comprobante_id=text(fd,'comprobante_id',64)
  if(!comprobante_id)return fail('Comprobante no válido.')
  try{
-  const {getSupabase}=await import('@/lib/data/supabase')
-  const sb=getSupabase()
+  const {createAuthClient}=await import('@/lib/auth/server')
+  const sb=await createAuthClient()
   const invoke=async(name:string,body:Record<string,unknown>)=>{
    const {data,error}=await sb.functions.invoke(name,{body})
    if(error)throw new Error(`${name}: ${error.message}`)

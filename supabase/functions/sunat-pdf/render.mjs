@@ -7,8 +7,10 @@ const amount = v => { const n = Number(value(v)); if (!Number.isFinite(n)) throw
 export function readInvoice(xml) {
   if (xml.length > 5_000_000 || /<!DOCTYPE|<!ENTITY/i.test(xml) || XMLValidator.validate(xml) !== true) throw new Error('XML no válido');
   const root = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true, parseTagValue: false, trimValues: true }).parse(xml);
-  const d = root.Invoice;
-  if (!d || value(d.InvoiceTypeCode) !== '01') throw new Error('Solo se admite factura electrónica en esta versión');
+  const d = root.Invoice || root.CreditNote;
+  const type=root.CreditNote ? '07' : value(d?.InvoiceTypeCode);
+  const credit=type==='07';
+  if (!d || !['01','03','07'].includes(type)) throw new Error('Tipo de comprobante no admitido');
   const supplier = d.AccountingSupplierParty?.Party, customer = d.AccountingCustomerParty?.Party;
   const identification = p => arr(p?.PartyIdentification)[0]?.ID ?? p?.PartyTaxScheme?.CompanyID;
   const name = p => value(arr(p?.PartyLegalEntity)[0]?.RegistrationName ?? p?.PartyTaxScheme?.RegistrationName);
@@ -20,15 +22,15 @@ export function readInvoice(xml) {
   const igv = tax.flatMap(t => arr(t.TaxSubtotal)).filter(t => value(t.TaxCategory?.TaxScheme?.ID) === '1000').reduce((sum,t)=>sum+Number(value(t.TaxAmount)),0).toFixed(2);
   const id = value(d.ID), date = value(d.IssueDate), currency = value(d.DocumentCurrencyCode);
   const ruc = value(identification(supplier)), recipient = identification(customer);
-  if (!/^\d{11}$/.test(ruc) || !/^F[A-Z0-9]{3}-\d{1,8}$/.test(id) || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !currency) throw new Error('Identificación XML incompleta');
+  if (!/^\d{11}$/.test(ruc) || !/^[FB][A-Z0-9]{3}-\d{1,8}$/.test(id) || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !currency) throw new Error('Identificación XML incompleta');
   const total = amount(totals?.PayableAmount), digest = value(d.UBLExtensions?.UBLExtension?.ExtensionContent?.Signature?.SignedInfo?.Reference?.DigestValue);
   const terms = arr(d.PaymentTerms);
   const discounts = node => arr(node?.AllowanceCharge).filter(a => value(a.ChargeIndicator) === 'false').reduce((sum,a)=>sum+Number(amount(a.Amount)),0);
-  const globalDiscount=discounts(d), itemDiscount=arr(d.InvoiceLine).reduce((sum,l)=>sum+discounts(l),0);
+  const globalDiscount=discounts(d), itemDiscount=arr(d.InvoiceLine||d.CreditNoteLine).reduce((sum,l)=>sum+discounts(l),0);
   const discount=value(totals?.AllowanceTotalAmount) ? amount(totals.AllowanceTotalAmount) : (globalDiscount+itemDiscount).toFixed(2);
-  return { id,date,currency,ruc,supplier:name(supplier),supplierAddress:address(supplier),customer:name(customer),customerDocument:value(recipient),customerDocumentType:recipient?.['@_schemeID'] ?? '',customerAddress:address(customer),total,igv,digest,
-    qr:[ruc,'01',...id.split('-'),igv,total,date,recipient?.['@_schemeID']??'',value(recipient),digest].join('|'),
-    lines:arr(d.InvoiceLine).map(l => ({id:value(l.ID),quantity:value(l.InvoicedQuantity),unit:l.InvoicedQuantity?.['@_unitCode']??'',description:arr(l.Item?.Description).map(value).join(' / '),discount:discounts(l).toFixed(2),unitValue:amount(l.Price?.PriceAmount),unitPrice:value(arr(l.PricingReference?.AlternativeConditionPrice).find(p=>value(p.PriceTypeCode)==='01')?.PriceAmount),net:amount(l.LineExtensionAmount)})),
+  return { type,title:credit?'NOTA DE CRÉDITO ELECTRÓNICA':type==='03'?'BOLETA DE VENTA ELECTRÓNICA':'FACTURA ELECTRÓNICA',reference:value(d.BillingReference?.InvoiceDocumentReference?.ID),reason:value(d.DiscrepancyResponse?.Description),id,date,currency,ruc,supplier:name(supplier),supplierAddress:address(supplier),customer:name(customer),customerDocument:value(recipient),customerDocumentType:recipient?.['@_schemeID'] ?? '',customerAddress:address(customer),total,igv,digest,
+    qr:[ruc,type,...id.split('-'),igv,total,date,recipient?.['@_schemeID']??'',value(recipient),digest].join('|'),
+    lines:arr(d.InvoiceLine||d.CreditNoteLine).map(l => ({id:value(l.ID),quantity:value(l.InvoicedQuantity||l.CreditedQuantity),unit:(l.InvoicedQuantity||l.CreditedQuantity)?.['@_unitCode']??'',description:arr(l.Item?.Description).map(value).join(' / '),discount:discounts(l).toFixed(2),unitValue:amount(l.Price?.PriceAmount),unitPrice:value(arr(l.PricingReference?.AlternativeConditionPrice).find(p=>value(p.PriceTypeCode)==='01')?.PriceAmount),net:amount(l.LineExtensionAmount)})),
     taxes:tax.flatMap(t=>arr(t.TaxSubtotal)).map(t=>({code:value(t.TaxCategory?.TaxScheme?.ID),name:value(t.TaxCategory?.TaxScheme?.Name),base:amount(t.TaxableAmount),tax:amount(t.TaxAmount)})),
     payment:terms.find(t=>value(t.ID)==='FormaPago'),installments:terms.filter(t=>/^Cuota/.test(value(t.PaymentMeansID))),notes:arr(d.Note).map(value),discount,globalDiscount:globalDiscount.toFixed(2),itemDiscount:itemDiscount.toFixed(2),charges:amount(totals?.ChargeTotalAmount),prepaid:amount(totals?.PrepaidAmount)
   };
@@ -62,8 +64,8 @@ export async function renderInvoice(xml, status, addresses = {}) {
     for(const line of wrap(d.supplier,285,10)){text(line,32,headY,10,true);headY-=13;}
     for(const line of wrap('Domicilio fiscal: '+(d.supplierAddress||'PENDIENTE EN EL XML'),285,8)){text(line,32,headY,8);headY-=11;}
     page.drawRectangle({x:337,y:734,width:226,height:78,borderColor:blue,borderWidth:1,color:pale});
-    text('RUC '+d.ruc,350,788,12,true);text('FACTURA ELECTRÓNICA',350,764,12,true);text(d.id,350,742,14,true);
-    text(beta?'PRUEBA SUNAT BETA - SIN VALIDEZ TRIBUTARIA':'BORRADOR - VALIDACIÓN TRIBUTARIA PENDIENTE',32,711,9,true);
+    text('RUC '+d.ruc,350,788,12,true);text(d.title,350,764,9,true);text(d.id,350,742,14,true);
+    text(beta?'PRUEBA SUNAT BETA - SIN VALIDEZ TRIBUTARIA':status==='ACEPTADO'?'ACEPTADO POR SUNAT':'BORRADOR - VALIDACIÓN TRIBUTARIA PENDIENTE',32,711,9,true);
     text('Página '+pageNumber,505,23,8);y=Math.min(688,headY-20);
   }
   function room(height){if(y-height<55)newPage();}
@@ -72,7 +74,8 @@ export async function renderInvoice(xml, status, addresses = {}) {
   block((d.customerDocumentType==='6'?'RUC: ':'DOCUMENTO: ')+d.customerDocument,32,531);
   block('DIRECCIÓN: '+(d.customerAddress||'No consignada en el XML'),32,531);
   block('FECHA DE EMISIÓN: '+d.date+'     MONEDA: '+d.currency,32,531);
-  block('FORMA DE PAGO: '+(value(d.payment?.PaymentMeansID)||'No consignada'),32,531);y-=18;
+  if(d.reference){block('COMPROBANTE MODIFICADO: '+d.reference,32,531);block('MOTIVO: '+d.reason,32,531);}
+  if(d.type!=='07')block('FORMA DE PAGO: '+(value(d.payment?.PaymentMeansID)||'No consignada'),32,531);y-=18;
   function right(s,end,at,size=8,b=false){text(s,end-(b?bold:font).widthOfTextAtSize(clean(s),size),at,size,b);}
 
   function tableHeader(){
@@ -119,10 +122,10 @@ export async function renderInvoice(xml, status, addresses = {}) {
   room(165);y-=12;
   if(d.digest){const png=await QRCode.toBuffer(d.qr,{type:'png',width:384,margin:4,errorCorrectionLevel:'M'});const image=await pdf.embedPng(png);page.drawImage(image,{x:32,y:y-105,width:105,height:105});}
   else text('QR pendiente de firma',32,y-40,8);
-  let footerY=y; text('Representación impresa de la factura electrónica',150,footerY,9,true);footerY-=17;
+  let footerY=y; text('Representación impresa del comprobante electrónico',150,footerY,9,true);footerY-=17;
   for(const line of wrap('Estado: '+status,410,8)){text(line,150,footerY,8);footerY-=12;}
   for(const line of wrap('Valor resumen: '+(d.digest||'XML sin firma'),410,7)){text(line,150,footerY,7);footerY-=11;}
   text(betaAddressFallback && (addresses.supplierAddress || addresses.customerAddress) ? 'BETA: direcciones complementadas desde los datos del CRM.' : 'Datos reproducidos del XML conservado por Mega XL.',150,footerY-5,8);
-  pdf.setTitle('MEGA XL - Factura '+d.id);pdf.setAuthor('MEGA XL');
-  return {bytes:await pdf.save(),filename:d.ruc+'-01-'+d.id+'.pdf',invoice:d};
+  pdf.setTitle('MEGA XL - '+d.id);pdf.setAuthor('MEGA XL');
+  return {bytes:await pdf.save(),filename:d.ruc+'-'+d.type+'-'+d.id+'.pdf',invoice:d};
 }
