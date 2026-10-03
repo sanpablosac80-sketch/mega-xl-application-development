@@ -80,7 +80,16 @@ Deno.serve(async(req:Request)=>{
    return j({ok:true,state:'PREPARADO',prepared:true,message:'XML firmado y expediente preparado. Revisa el PDF antes de emitir.'})
   }
   if(body.action==='betaProbe'){if(existing||d.estado_sunat!=='ACEPTADO_BETA'||!['factura','boleta','nota_credito'].includes(d.tipo))return j({error:'Solo comprobantes BETA existentes'},409);const bytes=await download(d.zip_path);const name=d.zip_path.split('/').pop();const r=await soap('sendBill',`<fileName>${esc(name)}</fileName><contentFile>${b64(bytes)}</contentFile>`,false,true);const content=r.body?.sendBillResponse?.applicationResponse;if(content){const cdr=await readCdr(String(content),d.serie+'-'+d.correlativo);return j({environment:'beta',http:r.http,accepted:cdr.accepted,code:cdr.code,message:cdr.description,persisted:false})}return j({environment:'beta',http:r.http,fault:r.body?.Fault,persisted:false})}
-  if(body.action==='diagnose'){const r=await soap('getStatus','<ticket>000000000000000000</ticket>');const fault=r.body?.Fault;return j({ok:!fault,http:r.http,code:String(fault?.faultcode||''),message:String(fault?.faultstring||r.body?.getStatusResponse?.status?.statusMessage||'Consulta sin CDR'),configured_user:Deno.env.get('SUNAT_SOL_USER')?.trim(),read_only:true})}
+  if(body.action==='diagnose'){
+   const invoice=body.invoice_query===true
+   if(invoice&&d.tipo!=='factura')return j({error:'La consulta requiere una factura'},409)
+   const method=invoice?'getStatusCdr':'getStatus'
+   const payload=invoice?`<rucComprobante>${cfg.ruc}</rucComprobante><tipoComprobante>01</tipoComprobante><serieComprobante>${esc(d.serie)}</serieComprobante><numeroComprobante>${d.correlativo}</numeroComprobante>`:'<ticket>000000000000000000</ticket>'
+   const r=await soap(method,payload,invoice),fault=r.body?.Fault,status=invoice?r.body?.getStatusCdrResponse?.statusCdr:r.body?.getStatusResponse?.status
+   let message=String(fault?.faultstring||status?.statusMessage||'Consulta sin CDR').slice(0,1000)
+   for(const secret of [Deno.env.get('SUNAT_SOL_PASSWORD')])if(secret)message=message.replaceAll(secret,'[oculto]')
+   return j({ok:!fault,http:r.http,method,code:String(fault?.faultcode||status?.statusCode||''),message,has_cdr:!!status?.content,configured_user:Deno.env.get('SUNAT_SOL_USER')?.trim(),read_only:true,persisted:false})
+  }
   if(!existing)return j({error:'Prepara primero el comprobante'},409)
   if(body.action==='authorize'){
    if(body.confirm_production!==true||existing.state!=='PREPARADO')return j({error:'Confirma la emisión real de un comprobante preparado'},409)
