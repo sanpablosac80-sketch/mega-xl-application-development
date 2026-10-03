@@ -32,8 +32,8 @@ Deno.serve(async(req:Request)=>{
   if(!user||!password)throw Error('Credenciales SOL incompletas')
   const endpoint=consult?'https://e-factura.sunat.gob.pe/ol-it-wsconscpegem/billConsultService':'https://e-factura.sunat.gob.pe/ol-ti-itcpfegem/billService'
   const xml=`<?xml version="1.0"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ser="http://service.sunat.gob.pe" xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"><soapenv:Header><wsse:Security><wsse:UsernameToken><wsse:Username>${esc(user.startsWith(cfg.ruc)?user:cfg.ruc+user)}</wsse:Username><wsse:Password>${esc(password)}</wsse:Password></wsse:UsernameToken></wsse:Security></soapenv:Header><soapenv:Body><ser:${method}>${payload}</ser:${method}></soapenv:Body></soapenv:Envelope>`
-  const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'text/xml;charset=UTF-8',SOAPAction:'urn:'+method},body:xml,signal:AbortSignal.timeout(25000)})
-  const text=await response.text();if(!text.trim())throw Error('SUNAT devolvió una respuesta vacía (HTTP '+response.status+'); no acredita aceptación ni autenticación');if(text.length>10_000_000||/<!DOCTYPE|<!ENTITY/i.test(text)||XMLValidator.validate(text)!==true)throw Error('Respuesta SUNAT no verificable')
+  const response=await fetch(endpoint,{method:'POST',redirect:'manual',headers:{'Content-Type':'text/xml;charset=UTF-8',SOAPAction:'urn:'+method},body:xml,signal:AbortSignal.timeout(25000)})
+  const text=await response.text();if(!text.trim())throw Error('SUNAT sin contenido: HTTP '+response.status+', Content-Type '+(response.headers.get('content-type')||'ausente')+', redirección '+(response.headers.get('location')||'ninguna')+'; no acredita aceptación ni autenticación');if(text.length>10_000_000||/<!DOCTYPE|<!ENTITY/i.test(text)||XMLValidator.validate(text)!==true)throw Error('Respuesta SUNAT no verificable')
   return {http:response.status,body:parser.parse(text).Envelope?.Body}
  }
  async function finish(cdrBase64:string,job:any){
