@@ -14,7 +14,8 @@ export function invoiceXml(d,items,cfg,address='',ref=null){
  if(!items.length||items.some(x=>!(Number(x.cantidad)>0)||!(Number(x.precio_unitario)>0)||Math.abs(round(x.cantidad*x.precio_unitario)-Number(x.subtotal))>.01))throw Error('Ítems inconsistentes');
  if((type==='01'||ref?.tipo==='factura')&&!/^\d{11}$/.test(d.cliente_documento||''))throw Error('La factura requiere RUC del comprador');
  if(credit&&(!ref||d.motivo_codigo!=='01'))throw Error('Por ahora se admite anulación total de una operación aceptada');
- const bases=items.map(x=>round(Number(x.subtotal)/1.18));const grossBase=round(bases.reduce((a,b)=>a+b,0));
+ const bases=items.map(x=>round(Number(x.subtotal)/1.18));const grossBase=round(items.reduce((s,x)=>s+Number(x.subtotal),0)/1.18);
+ bases[bases.length-1]=round(bases.at(-1)+grossBase-round(bases.reduce((a,b)=>a+b,0)));
  const discount=round(grossBase-Number(d.valor_venta));
  if(discount<0||Math.abs(round(Number(d.total)/1.18)-Number(d.valor_venta))>.02||Math.abs(round(Number(d.valor_venta)+Number(d.igv))-Number(d.total))>.01||Math.abs(round(items.reduce((s,x)=>s+Number(x.subtotal),0)-Number(d.descuento))-Number(d.total))>.02)throw Error('Los totales no coinciden con la venta');
  const global=discount>0?`<cac:AllowanceCharge><cbc:ChargeIndicator>false</cbc:ChargeIndicator><cbc:AllowanceChargeReasonCode>02</cbc:AllowanceChargeReasonCode><cbc:MultiplierFactorNumeric>${(discount/grossBase).toFixed(5)}</cbc:MultiplierFactorNumeric>${amount('cbc:Amount',discount)}${amount('cbc:BaseAmount',grossBase)}</cac:AllowanceCharge>`:'';

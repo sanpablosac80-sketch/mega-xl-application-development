@@ -9,7 +9,7 @@ async function fixture(code='0',id='F001-1'){
 test('acceptance requires matching document and CDR code zero',async()=>{
  assert.equal((await readCdr(await fixture(),'F001-1')).accepted,true);
  assert.equal((await readCdr(await fixture('4000'),'F001-1')).accepted,false);
- await assert.rejects(readCdr(await fixture('0','F001-2'),'F001-1'),/otra guía/);
+ await assert.rejects(readCdr(await fixture('0','F001-2'),'F001-1'),/otro comprobante/);
 });
 test('CDR without XML is rejected',async()=>{
  const zip=new JSZip();zip.file('empty.txt','no CDR');
